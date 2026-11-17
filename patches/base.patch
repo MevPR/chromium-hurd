@@ -614,7 +614,7 @@ index b282410b47..73abada4f9 100644
    (__builtin_constant_p(PTHREAD_STACK_MIN) ? PTHREAD_STACK_MIN : 131072)
  #else
 diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
-index 99427d5301..3a7c4b577b 100644
+index 99427d5301..d8e32b4637 100644
 --- a/base/process/launch_posix.cc
 +++ b/base/process/launch_posix.cc
 @@ -73,12 +73,14 @@ namespace base {
@@ -654,17 +654,19 @@ index 99427d5301..3a7c4b577b 100644
    if (options.clone_flags) {
      // Signal handling in this function assumes the creation of a new
      // process, so we check that a thread is not being created by mistake
-@@ -732,7 +738,16 @@ bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
+@@ -732,7 +738,18 @@ bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
    return GetAppOutputInternal(argv, nullptr, false, output, true, exit_code);
  }
  
 -#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
 +#if BUILDFLAG(IS_HURD)
 +pid_t ForkWithFlags(int flags, pid_t* ptid, pid_t* ctid) {
-+  // GNU/Hurd has no clone(). Only the flags-free fork() case (with the default
-+  // termination signal) can be supported.
++  // GNU/Hurd has no clone(). Only the flag-free fork() case (with the default
++  // termination signal) can be supported. Fail like a Linux kernel that lacks
++  // the requested feature, so callers probing for namespaces see EINVAL.
 +  if ((flags & ~0xff) != 0 || (flags & 0xff) != SIGCHLD || ptid || ctid) {
-+    RAW_LOG(FATAL, "ForkWithFlags: clone flags are not supported on GNU/Hurd");
++    errno = EINVAL;
++    return -1;
 +  }
 +  return fork();
 +}

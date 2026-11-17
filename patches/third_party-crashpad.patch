@@ -25,40 +25,27 @@ index 0b559ec405..12686de562 100644
  
  extern "C" {
  
-diff --git a/third_party/crashpad/crashpad/compat/linux/sys/user.h b/third_party/crashpad/crashpad/compat/linux/sys/user.h
-index a41ffe668a..24ec3a6a8e 100644
---- a/third_party/crashpad/crashpad/compat/linux/sys/user.h
-+++ b/third_party/crashpad/crashpad/compat/linux/sys/user.h
-@@ -15,7 +15,29 @@
- #ifndef CRASHPAD_COMPAT_LINUX_SYS_USER_H_
- #define CRASHPAD_COMPAT_LINUX_SYS_USER_H_
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
+index 85882e8ee4..c3045b14ee 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
+@@ -92,12 +92,16 @@ int ComputeThreadPriority(int static_priority,
+   }
  
-+#if defined(__GNU__)
-+// GNU/Hurd has no <sys/user.h>. Crashpad only uses these as the layout of
-+// Linux ptrace register sets, which never succeed on the Hurd, but the sizes
-+// are checked at compile time, so mirror the Linux x86-64 definitions.
-+#if !defined(__x86_64__)
-+#error Only x86-64 GNU/Hurd is supported
+   switch (sched_policy) {
++#if defined(SCHED_IDLE)  // Not defined on GNU/Hurd.
+     case SCHED_IDLE:
+       prio.policy = Policy::kIdle;
+       break;
 +#endif
-+struct user_regs_struct {
-+  unsigned long long r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8, rax, rcx,
-+      rdx, rsi, rdi, orig_rax, rip, cs, eflags, rsp, ss, fs_base, gs_base, ds,
-+      es, fs, gs;
-+};
-+struct user_fpregs_struct {
-+  unsigned short cwd, swd, ftw, fop;
-+  unsigned long long rip, rdp;
-+  unsigned int mxcsr, mxcr_mask;
-+  unsigned int st_space[32];
-+  unsigned int xmm_space[64];
-+  unsigned int padding[24];
-+};
-+#else
- #include_next <sys/user.h>
++#if defined(SCHED_BATCH)
+     case SCHED_BATCH:
+       prio.policy = Policy::kBatch;
+       break;
 +#endif
- 
- #include <features.h>
- 
+     case SCHED_OTHER:
+       prio.policy = Policy::kOther;
+       break;
 diff --git a/third_party/crashpad/crashpad/third_party/lss/lss.h b/third_party/crashpad/crashpad/third_party/lss/lss.h
 index 90cb9bcfe7..ec36dcfc13 100644
 --- a/third_party/crashpad/crashpad/third_party/lss/lss.h
@@ -173,6 +160,21 @@ index bb43e858f6..a697df9059 100644
      PLOG(ERROR) << "clock_gettime";
      return false;
    }
+diff --git a/third_party/crashpad/crashpad/util/net/tls.gni b/third_party/crashpad/crashpad/util/net/tls.gni
+index e0249a84c1..7efc7c9a79 100644
+--- a/third_party/crashpad/crashpad/util/net/tls.gni
++++ b/third_party/crashpad/crashpad/util/net/tls.gni
+@@ -15,7 +15,9 @@
+ import("../../build/crashpad_buildconfig.gni")
+ 
+ declare_args() {
+-  if (crashpad_is_fuchsia || crashpad_is_android) {
++  # GNU/Hurd: libcurl is not part of the sysroot; use the portable transport.
++  if (crashpad_is_fuchsia || crashpad_is_android ||
++      (crashpad_is_in_chromium && is_hurd)) {
+     crashpad_http_transport_impl = "socket"
+   } else if (crashpad_is_linux) {
+     crashpad_http_transport_impl = "libcurl"
 diff --git a/third_party/crashpad/crashpad/util/posix/signals.cc b/third_party/crashpad/crashpad/util/posix/signals.cc
 index 58f957c40d..47a43107ce 100644
 --- a/third_party/crashpad/crashpad/util/posix/signals.cc

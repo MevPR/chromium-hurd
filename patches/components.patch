@@ -1,3 +1,19 @@
+diff --git a/components/crash/core/app/BUILD.gn b/components/crash/core/app/BUILD.gn
+index ffbbd8cad5..34fa636e1a 100644
+--- a/components/crash/core/app/BUILD.gn
++++ b/components/crash/core/app/BUILD.gn
+@@ -133,7 +133,10 @@ static_library("app") {
+ 
+   if (is_linux || is_chromeos) {
+     sources += [ "crashpad_linux.cc" ]
+-    data_deps = [ ":chrome_crashpad_handler" ]
++    if (!is_hurd) {
++      # The handler is never started on GNU/Hurd.
++      data_deps = [ ":chrome_crashpad_handler" ]
++    }
+   }
+ 
+   if (is_ios) {
 diff --git a/components/crash/core/app/crashpad_linux.cc b/components/crash/core/app/crashpad_linux.cc
 index 879b0a5d1e..f9c5e7d809 100644
 --- a/components/crash/core/app/crashpad_linux.cc
@@ -57,6 +73,26 @@ index 0fbd58daa7..61d5bb75de 100644
        if (fd < 0) {
          LOG(ERROR) << "Failed to open file for transfer: " << file;
        } else {
+diff --git a/components/gwp_asan/crash_handler/crash_analyzer.cc b/components/gwp_asan/crash_handler/crash_analyzer.cc
+index 3f19e3364d..c4a313daef 100644
+--- a/components/gwp_asan/crash_handler/crash_analyzer.cc
++++ b/components/gwp_asan/crash_handler/crash_analyzer.cc
+@@ -316,10 +316,14 @@ bool CrashAnalyzer::AnalyzeLightweightDetectorCrash(
+   // crash. See also "Intel 64 and IA-32 Architectures Software Developer’s
+   // Manual", Volume 1, Section 3.3.7.1.
+   if (
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+       // https://elixir.bootlin.com/linux/v6.2.2/source/arch/x86/kernel/traps.c#L719
+       exception->Exception() == SIGSEGV &&
+       exception->ExceptionInfo() == SI_KERNEL
++#elif BUILDFLAG(IS_HURD)
++      // GNU/Hurd does not report general protection faults distinctly.
++      false
+ #elif BUILDFLAG(IS_APPLE)
+       // https://opensource.apple.com/source/xnu/xnu-1699.24.8/osfmk/i386/trap.c
+       exception->Exception() == EXC_BAD_ACCESS &&
 diff --git a/components/named_mojo_ipc_server/connection_info.h b/components/named_mojo_ipc_server/connection_info.h
 index dbdad3bdc6..d40298add1 100644
 --- a/components/named_mojo_ipc_server/connection_info.h
@@ -120,6 +156,48 @@ index 5527777ca5..28e442217c 100644
  
  #include <array>
  #include <utility>
+diff --git a/components/policy/core/common/cloud/cloud_policy_util.cc b/components/policy/core/common/cloud/cloud_policy_util.cc
+index 1fb1b09ff3..0a2f48932c 100644
+--- a/components/policy/core/common/cloud/cloud_policy_util.cc
++++ b/components/policy/core/common/cloud/cloud_policy_util.cc
+@@ -94,6 +94,10 @@ const int kMinimumVersionForExtensionInstallPolicy = 146;
+ 
+ std::string GetMachineName() {
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_FUCHSIA)
++#if !defined(HOST_NAME_MAX)
++  // GNU/Hurd has no fixed host name limit; use the Linux value.
++  constexpr int HOST_NAME_MAX = 64;
++#endif
+   char hostname[HOST_NAME_MAX];
+   if (gethostname(hostname, HOST_NAME_MAX) == 0)  // Success.
+     return hostname;
+diff --git a/components/policy/tools/generate_policy_source.gni b/components/policy/tools/generate_policy_source.gni
+index 9bfa540933..2f6825dccd 100644
+--- a/components/policy/tools/generate_policy_source.gni
++++ b/components/policy/tools/generate_policy_source.gni
+@@ -17,6 +17,13 @@ import("//components/policy/resources/policy_templates.gni")
+ #
+ #   generate_app_restrictions (optional, default true)
+ #       Generate app_restrictions.xml (only on Android).
++# GNU/Hurd uses the desktop Linux set of policies.
++if (target_os == "hurd") {
++  _policy_target_platform = "linux"
++} else {
++  _policy_target_platform = target_os
++}
++
+ template("generate_policy_source") {
+   assert(defined(invoker.chunking))
+   chunking = invoker.chunking
+@@ -59,7 +66,7 @@ template("generate_policy_source") {
+       "--chrome-version-major=" + chrome_version_major,
+       "--policy-templates-file=" +
+           rebase_path(policy_templates_generated_json_path, root_build_dir),
+-      "--target-platform=" + target_os,
++      "--target-platform=" + _policy_target_platform,
+     ]
+     if (!chunking) {
+       args += [ "--no-chunking" ]
 diff --git a/components/power_metrics/BUILD.gn b/components/power_metrics/BUILD.gn
 index ddcc4237b7..4db32aabc7 100644
 --- a/components/power_metrics/BUILD.gn

@@ -1,3 +1,20 @@
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index f1d133b6cd..ebd408e7fb 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -329,7 +329,11 @@ if (!is_android && !is_mac) {
+         "//chrome/common:buildflags",
+       ]
+ 
+-      data_deps += [ "//components/crash/core/app:chrome_crashpad_handler" ]
++      # The Crashpad handler is not started on GNU/Hurd (no ptrace-based
++      # snapshots); see components/crash/core/app/crashpad_linux.cc.
++      if (!is_hurd) {
++        data_deps += [ "//components/crash/core/app:chrome_crashpad_handler" ]
++      }
+ 
+       ldflags = []
+ 
 diff --git a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc b/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc
 index 303091b905..67a222a4fe 100644
 --- a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc

@@ -1,14 +1,342 @@
-diff --git a/sandbox/features.gni b/sandbox/features.gni
-index 8c5db2c6fa..86b1266f7f 100644
---- a/sandbox/features.gni
-+++ b/sandbox/features.gni
-@@ -6,7 +6,8 @@
- # currently.
- # Do not disable seccomp_bpf anywhere without talking to
- # security@chromium.org!
--use_seccomp_bpf = (is_linux || is_chromeos || is_android) &&
-+# GNU/Hurd has no seccomp (nor any other Linux kernel sandboxing facility).
-+use_seccomp_bpf = ((is_linux && !is_hurd) || is_chromeos || is_android) &&
-                   (current_cpu == "x86" || current_cpu == "x64" ||
-                    current_cpu == "arm" || current_cpu == "arm64" ||
-                    current_cpu == "mipsel" || current_cpu == "mips64el")
+diff --git a/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc b/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+index 85f14c9023..6ad9538400 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+@@ -23,6 +23,7 @@
+ #include "sandbox/linux/services/syscall_wrappers.h"
+ #include "sandbox/linux/system_headers/linux_stat.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #if !defined(SO_PEEK_OFF)
+ #define SO_PEEK_OFF 42
+diff --git a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+index 3882967d4b..8a115e0d39 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+@@ -7,7 +7,9 @@
+ #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
+ 
+ #include <fcntl.h>
++#if !defined(__GNU__)
+ #include <linux/net.h>
++#endif
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <string.h>
+@@ -27,6 +29,7 @@
+ #include "sandbox/linux/system_headers/linux_seccomp.h"
+ #include "sandbox/linux/system_headers/linux_stat.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #if BUILDFLAG(IS_ANDROID)
+ #include <android/log.h>
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+index 88e6b30e29..cf6b64dca4 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+@@ -6,7 +6,9 @@
+ 
+ #include <errno.h>
+ #include <fcntl.h>
++#if !defined(__GNU__)
+ #include <linux/net.h>
++#endif
+ #include <sched.h>
+ #include <signal.h>
+ #include <stdint.h>
+@@ -40,13 +42,14 @@
+ #include "sandbox/linux/system_headers/linux_ptrace.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
+ #include "sandbox/linux/system_headers/linux_time.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #if !defined(MAP_DROPPABLE)
+ #define MAP_DROPPABLE 0x08  // Zero memory under memory pressure.
+ #endif
+ 
+ #if BUILDFLAG(IS_LINUX) && !defined(__arm__) && !defined(__aarch64__) && \
+-    !defined(PTRACE_GET_THREAD_AREA)
++    !defined(PTRACE_GET_THREAD_AREA) && !defined(__GNU__)
+ // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
+ // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
+ // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
+diff --git a/sandbox/linux/seccomp-bpf/die.cc b/sandbox/linux/seccomp-bpf/die.cc
+index 6442339270..279f431ff3 100644
+--- a/sandbox/linux/seccomp-bpf/die.cc
++++ b/sandbox/linux/seccomp-bpf/die.cc
+@@ -19,6 +19,7 @@
+ #include "sandbox/linux/seccomp-bpf/syscall.h"
+ #include "sandbox/linux/services/syscall_wrappers.h"
+ #include "sandbox/linux/system_headers/linux_signal.h"
++#include "sandbox/linux/system_headers/linux_syscalls.h"
+ 
+ namespace sandbox {
+ 
+diff --git a/sandbox/linux/services/credentials.cc b/sandbox/linux/services/credentials.cc
+index baeb313a6d..ca6fb4a9e9 100644
+--- a/sandbox/linux/services/credentials.cc
++++ b/sandbox/linux/services/credentials.cc
+@@ -33,6 +33,7 @@
+ #include "sandbox/linux/services/thread_helpers.h"
+ #include "sandbox/linux/system_headers/capability.h"
+ #include "sandbox/linux/system_headers/linux_signal.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ namespace sandbox {
+ 
+@@ -72,6 +73,11 @@ int ChrootToSelfFdinfo(void*) {
+ // 3. The process dies
+ // After (3) happens, the directory is not available anymore in /proc.
+ bool ChrootToSafeEmptyDir() {
++#if defined(__GNU__)
++  // There is no clone() (nor procfs-based chroot trick) on GNU/Hurd.
++  errno = ENOSYS;
++  return false;
++#else
+   // We need to chroot to a fdinfo that is unique to a process and have that
+   // process die.
+   // 1. We don't want to simply fork() because duplicating the page tables is
+@@ -118,6 +124,7 @@ bool ChrootToSafeEmptyDir() {
+   PCHECK(HANDLE_EINTR(waitpid(pid, &status, 0)) == pid);
+ 
+   return WIFEXITED(status) && WEXITSTATUS(status) == kExitSuccess;
++#endif  // defined(__GNU__)
+ }
+ 
+ // CHECK() that an attempt to move to a new user namespace raised an expected
+diff --git a/sandbox/linux/services/namespace_sandbox.cc b/sandbox/linux/services/namespace_sandbox.cc
+index 6c6c204f6c..1282e2913b 100644
+--- a/sandbox/linux/services/namespace_sandbox.cc
++++ b/sandbox/linux/services/namespace_sandbox.cc
+@@ -28,6 +28,7 @@
+ #include "sandbox/linux/services/namespace_utils.h"
+ #include "sandbox/linux/services/syscall_wrappers.h"
+ #include "sandbox/linux/system_headers/linux_signal.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #if defined(LIBC_GLIBC)
+ #include <pthread.h>
+@@ -109,12 +110,18 @@ struct glibc_pthread {
+ };
+ 
+ pid_t GetGlibcCachedTid() {
++#if defined(__GNU__)
++  // Hurd's libpthread does not cache kernel thread ids in its mutexes (there
++  // are none); this is only needed after entering a new PID namespace.
++  return getpid();
++#else
+   pthread_mutex_t lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+   CHECK_EQ(0, pthread_mutex_lock(&lock));
+   pid_t tid = lock.__data.__owner;
+   CHECK_EQ(0, pthread_mutex_unlock(&lock));
+   CHECK_EQ(0, pthread_mutex_destroy(&lock));
+   return tid;
++#endif  // defined(__GNU__)
+ }
+ 
+ void MaybeUpdateGlibcTidCache() {
+diff --git a/sandbox/linux/services/namespace_utils.cc b/sandbox/linux/services/namespace_utils.cc
+index 3e11d43b91..40168a2cb6 100644
+--- a/sandbox/linux/services/namespace_utils.cc
++++ b/sandbox/linux/services/namespace_utils.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "sandbox/linux/services/namespace_utils.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #include <fcntl.h>
+ #include <sched.h>
+diff --git a/sandbox/linux/services/syscall_wrappers.cc b/sandbox/linux/services/syscall_wrappers.cc
+index b7f4349b5c..1475c1b43c 100644
+--- a/sandbox/linux/services/syscall_wrappers.cc
++++ b/sandbox/linux/services/syscall_wrappers.cc
+@@ -25,6 +25,7 @@
+ #include "sandbox/linux/system_headers/linux_signal.h"
+ #include "sandbox/linux/system_headers/linux_stat.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ namespace sandbox {
+ 
+diff --git a/sandbox/linux/syscall_broker/broker_file_permission.cc b/sandbox/linux/syscall_broker/broker_file_permission.cc
+index 64a22893b7..c6bf5ea220 100644
+--- a/sandbox/linux/syscall_broker/broker_file_permission.cc
++++ b/sandbox/linux/syscall_broker/broker_file_permission.cc
+@@ -18,6 +18,7 @@
+ #include "base/compiler_specific.h"
+ #include "base/strings/string_util.h"
+ #include "sandbox/linux/syscall_broker/broker_command.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ namespace sandbox {
+ namespace syscall_broker {
+diff --git a/sandbox/linux/syscall_broker/broker_simple_message.cc b/sandbox/linux/syscall_broker/broker_simple_message.cc
+index c8d90e1f8a..cc2aa4fe6c 100644
+--- a/sandbox/linux/syscall_broker/broker_simple_message.cc
++++ b/sandbox/linux/syscall_broker/broker_simple_message.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "sandbox/linux/syscall_broker/broker_simple_message.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ #include <errno.h>
+ #include <string.h>
+diff --git a/sandbox/linux/system_headers/linux_futex.h b/sandbox/linux/system_headers/linux_futex.h
+index 4eff74d9b7..43137c4bab 100644
+--- a/sandbox/linux/system_headers/linux_futex.h
++++ b/sandbox/linux/system_headers/linux_futex.h
+@@ -5,7 +5,9 @@
+ #ifndef SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_FUTEX_H_
+ #define SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_FUTEX_H_
+ 
++#if !defined(__GNU__)  // GNU/Hurd has no futex; the values follow below.
+ #include <linux/futex.h>
++#endif
+ 
+ #if !defined(FUTEX_WAIT)
+ #define FUTEX_WAIT 0
+diff --git a/sandbox/linux/system_headers/linux_signal.h b/sandbox/linux/system_headers/linux_signal.h
+index 69ccaf1081..7076d09e15 100644
+--- a/sandbox/linux/system_headers/linux_signal.h
++++ b/sandbox/linux/system_headers/linux_signal.h
+@@ -67,6 +67,9 @@
+ 
+ #include <signal.h>
+ 
++// GNU/Hurd uses different signal numbers and sigaction flags. The LINUX_*
++// values are only needed for seccomp-bpf, which never runs there.
++#if !defined(__GNU__)
+ static_assert(LINUX_SIGHUP == SIGHUP, "LINUX_SIGHUP == SIGHUP");
+ static_assert(LINUX_SIGINT == SIGINT, "LINUX_SIGINT == SIGINT");
+ static_assert(LINUX_SIGQUIT == SIGQUIT, "LINUX_SIGQUIT == SIGQUIT");
+@@ -86,6 +89,7 @@ static_assert(LINUX_SA_SIGINFO == SA_SIGINFO, "LINUX_SA_SIGINFO == SA_SIGINFO");
+ static_assert(LINUX_SA_NODEFER == SA_NODEFER, "LINUX_SA_NODEFER == SA_NODEFER");
+ static_assert(LINUX_SA_RESTART == SA_RESTART, "LINUX_SA_RESTART == SA_RESTART");
+ static_assert(LINUX_SIG_DFL == SIG_DFL, "LINUX_SIG_DFL == SIG_DFL");
++#endif  // !defined(__GNU__)
+ 
+ typedef siginfo_t LinuxSigInfo;
+ 
+diff --git a/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc b/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+index 1ea2f0f6be..62b4772d4c 100644
+--- a/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+@@ -6,7 +6,9 @@
+ 
+ #include <errno.h>
+ #include <fcntl.h>
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/kcmp.h>
++#endif
+ #include <sys/socket.h>
+ 
+ // Some arch's (arm64 for instance) unistd.h don't pull in symbols used here
+@@ -17,6 +19,7 @@
+ 
+ #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ 
+ using sandbox::bpf_dsl::AllOf;
+ using sandbox::bpf_dsl::Allow;
+diff --git a/sandbox/policy/linux/bpf_gpu_policy_linux.cc b/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+index 74333b96d1..42361f1f70 100644
+--- a/sandbox/policy/linux/bpf_gpu_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+@@ -17,6 +17,7 @@
+ #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
+ #include "sandbox/linux/syscall_broker/broker_process.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ #include "sandbox/policy/linux/bpf_base_policy_linux.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ #include "sandbox/policy/linux/sandbox_seccomp_bpf_linux.h"
+diff --git a/sandbox/policy/linux/bpf_hardware_video_decoding_policy_linux.cc b/sandbox/policy/linux/bpf_hardware_video_decoding_policy_linux.cc
+index c44b331c1f..fb6cf6e749 100644
+--- a/sandbox/policy/linux/bpf_hardware_video_decoding_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_hardware_video_decoding_policy_linux.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "sandbox/policy/linux/bpf_hardware_video_decoding_policy_linux.h"
+ 
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/kcmp.h>
++#endif
+ 
+ #include "base/notreached.h"
+ #include "media/gpu/buildflags.h"
+@@ -13,6 +15,7 @@
+ #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
+ #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ 
+ using sandbox::bpf_dsl::AllOf;
+diff --git a/sandbox/policy/linux/bpf_network_policy_linux.cc b/sandbox/policy/linux/bpf_network_policy_linux.cc
+index 88100791cc..8ed9319d3d 100644
+--- a/sandbox/policy/linux/bpf_network_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_network_policy_linux.cc
+@@ -7,11 +7,19 @@
+ #include <memory>
+ 
+ #include <fcntl.h>
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/ioctl.h>
++#endif
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/net.h>
++#endif
+ #include <linux/netlink.h>
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/sockios.h>
++#endif
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/wireless.h>
++#endif
+ #include <netinet/in.h>
+ #include <netinet/tcp.h>
+ #include <sys/inotify.h>
+@@ -28,6 +36,7 @@
+ #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
+ #include "sandbox/linux/syscall_broker/broker_process.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ #include "sandbox/policy/features.h"
+ #include "sandbox/policy/linux/bpf_base_policy_linux.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+diff --git a/sandbox/policy/linux/bpf_renderer_policy_linux.cc b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
+index 8709f5e70a..baa1b5fed7 100644
+--- a/sandbox/policy/linux/bpf_renderer_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
+@@ -15,11 +15,14 @@
+ #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
+ #include "sandbox/linux/system_headers/linux_prctl.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ 
+ // TODO(vignatti): replace the local definitions below with #include
+ // <linux/dma-buf.h> once kernel version 4.6 becomes widely used.
++#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
+ #include <linux/types.h>
++#endif
+ 
+ struct local_dma_buf_sync {
+   __u64 flags;
+diff --git a/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc b/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc
+index 39624b506d..512b03b18f 100644
+--- a/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc
+@@ -12,6 +12,7 @@
+ #include "sandbox/linux/syscall_broker/broker_process.h"
+ #include "sandbox/linux/system_headers/linux_prctl.h"
+ #include "sandbox/linux/system_headers/linux_syscalls.h"
++#include "sandbox/linux/system_headers/linux_hurd.h"
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ 
+ using sandbox::bpf_dsl::Allow;

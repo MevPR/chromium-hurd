@@ -48,7 +48,15 @@ docker run --rm -it --platform linux/amd64 \
 
 Copy `out/hurd/` to a Hurd system (e.g. the official
 [Debian GNU/Hurd amd64 image](https://cdimage.debian.org/cdimage/ports/latest/hurd-amd64/)
-in QEMU) and run `./chrome --no-sandbox`.
+in QEMU) and run:
+
+```sh
+./chrome --no-sandbox --no-zygote
+```
+
+`--no-sandbox` is required (see [docs/PORTING.md](docs/PORTING.md#sandbox));
+`--no-zygote` avoids the zygote's reliance on Linux-specific process and
+socket features while the port is being brought up.
 
 ## License
 
