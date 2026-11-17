@@ -11,6 +11,7 @@ net.patch
 sandbox.patch
 services.patch
 third_party-abseil-cpp.patch
+third_party-angle.patch
 third_party-cpu_features.patch
 third_party-cpuinfo.patch
 third_party-crashpad.patch

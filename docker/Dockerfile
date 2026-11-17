@@ -7,7 +7,8 @@ FROM --platform=linux/amd64 debian:sid
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
       --no-install-recommends \
       build-essential ca-certificates curl dpkg-dev e2fsprogs file git gperf \
-      libglib2.0-dev libnss3-dev libgtk-3-dev libx11-dev libxkbcommon-dev \
+      libglib2.0-dev libnss3-dev libgtk-3-dev libx11-dev libx11-xcb-dev \
+      libxkbcommon-dev \
       libdrm-dev libcups2-dev libpulse-dev libkrb5-dev libpci-dev \
       libxshmfence-dev libxtst-dev libxrandr-dev libxdamage-dev \
       libxcomposite-dev libgbm-dev libasound2-dev libudev-dev \

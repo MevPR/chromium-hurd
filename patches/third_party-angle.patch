@@ -1,0 +1,20 @@
+diff --git a/third_party/angle/src/common/platform.h b/third_party/angle/src/common/platform.h
+index cae59a1940..170df0ad20 100644
+--- a/third_party/angle/src/common/platform.h
++++ b/third_party/angle/src/common/platform.h
+@@ -20,11 +20,12 @@
+ #elif defined(ANDROID) && !defined(ANGLE_ANDROID_DMA_BUF)
+ #    define ANGLE_PLATFORM_ANDROID 1
+ #    define ANGLE_PLATFORM_POSIX 1
+-#elif defined(__linux__) || defined(EMSCRIPTEN)
++#elif defined(__linux__) || defined(EMSCRIPTEN) || defined(__GNU__)
++// GNU/Hurd is built like desktop Linux (X11 + EGL/GLX via Mesa).
+ #    define ANGLE_PLATFORM_LINUX 1
+ #    define ANGLE_PLATFORM_POSIX 1
+-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) ||              \
+-    defined(__DragonFly__) || defined(__sun) || defined(__GLIBC__) || defined(__GNU__) || \
++#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
++    defined(__DragonFly__) || defined(__sun) || defined(__GLIBC__) ||        \
+     defined(__QNX__) || defined(__Fuchsia__) || defined(__HAIKU__)
+ #    define ANGLE_PLATFORM_POSIX 1
+ #else
