@@ -1,0 +1,69 @@
+# GN arguments for cross-compiling Chromium to Debian GNU/Hurd amd64.
+# scripts/build.sh copies this file to out/hurd/args.gn and appends
+# target_sysroot.
+
+target_os = "hurd"
+target_cpu = "x64"
+
+is_debug = false
+is_official_build = false
+is_component_build = false
+symbol_level = 1
+blink_symbol_level = 0
+v8_symbol_level = 0
+dcheck_always_on = true
+
+# The host toolchain uses the build container's system libraries; the
+# target uses the Hurd sysroot passed in target_sysroot.
+use_sysroot = false
+
+# Source tarballs ship without Google's infrastructure.
+use_remoteexec = false
+use_siso = false
+enable_nacl = false
+treat_warnings_as_errors = false
+clang_use_chrome_plugins = false
+chrome_pgo_phase = 0
+use_thin_lto = false
+is_cfi = false
+
+# Graphics: X11 only. Hurd has no Wayland, no GBM, no VA-API and no
+# kernel DRM drivers; rendering goes through SwiftShader/Mesa llvmpipe.
+ozone_platform = "x11"
+ozone_platform_x11 = true
+ozone_platform_wayland = false
+use_gbm = false
+# Only referenced by unused targets; avoids the pkg-config lookup of gbm.
+use_system_minigbm = false
+use_vaapi = false
+use_v4l2_codec = false
+use_xkbcommon = true
+
+# Linux-kernel facilities that the Hurd does not have.
+use_udev = false
+use_alsa = false
+use_pulseaudio = true
+link_pulseaudio = false
+use_dbus = true
+use_gio = true
+use_cups = true
+use_kerberos = true
+
+# The Linux sandbox is built on seccomp-bpf, user namespaces and the
+# setuid helper, none of which exist on the Hurd. Process isolation is
+# kept; the syscall-filtering sandbox is disabled (see docs/sandbox.md).
+use_seccomp_bpf = false
+
+# Crash reporting uses ptrace and /proc/<pid>/mem.
+use_crashpad = false
+
+# Features that depend on unavailable services or hardware.
+enable_hangout_services_extension = false
+enable_widevine = false
+rtc_use_pipewire = false
+use_libinput = false
+use_evdev_gestures = false
+enable_remoting = false
+
+proprietary_codecs = false
+ffmpeg_branding = "Chromium"

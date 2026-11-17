@@ -1,0 +1,39 @@
+diff --git a/third_party/libc++/src/include/__configuration/platform.h b/third_party/libc++/src/include/__configuration/platform.h
+index ebd638e663..c0378d8461 100644
+--- a/third_party/libc++/src/include/__configuration/platform.h
++++ b/third_party/libc++/src/include/__configuration/platform.h
+@@ -35,7 +35,7 @@
+ #endif
+ 
+ // Need to detect which libc we're using if we're on Linux.
+-#if (defined(__linux__) || defined(__AMDGPU__) || defined(__NVPTX__)) && __has_include(<features.h>)
++#if (defined(__linux__) || defined(__GNU__) || defined(__AMDGPU__) || defined(__NVPTX__)) && __has_include(<features.h>)
+ #  include <features.h>
+ #  if defined(__GLIBC_PREREQ)
+ #    define _LIBCPP_GLIBC_PREREQ(a, b) __GLIBC_PREREQ(a, b)
+diff --git a/third_party/libc++/src/include/__locale_dir/locale_base_api.h b/third_party/libc++/src/include/__locale_dir/locale_base_api.h
+index f973d95ef2..336698b282 100644
+--- a/third_party/libc++/src/include/__locale_dir/locale_base_api.h
++++ b/third_party/libc++/src/include/__locale_dir/locale_base_api.h
+@@ -122,7 +122,7 @@
+ #    include <__locale_dir/support/fuchsia.h>
+ #  elif _LIBCPP_LIBC_LLVM_LIBC
+ #    include <__locale_dir/support/llvm_libc.h>
+-#  elif defined(__linux__)
++#  elif defined(__linux__) || defined(__GNU__)
+ #    include <__locale_dir/support/linux.h>
+ #  elif _LIBCPP_LIBC_NEWLIB
+ #    include <__locale_dir/support/newlib.h>
+diff --git a/third_party/libc++/src/src/include/config_elast.h b/third_party/libc++/src/src/include/config_elast.h
+index daec2429de..2f6a8d9682 100644
+--- a/third_party/libc++/src/src/include/config_elast.h
++++ b/third_party/libc++/src/src/include/config_elast.h
+@@ -33,6 +33,8 @@
+ // No _LIBCPP_ELAST needed on WASI
+ #elif defined(__EMSCRIPTEN__)
+ // No _LIBCPP_ELAST needed on Emscripten
++#elif defined(__GNU__)
++// No _LIBCPP_ELAST needed on GNU/Hurd, whose error codes start at 0x40000000
+ #elif defined(__linux__) || _LIBCPP_HAS_MUSL_LIBC
+ #  define _LIBCPP_ELAST 4095
+ #elif defined(__APPLE__)

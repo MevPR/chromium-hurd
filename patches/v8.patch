@@ -1,0 +1,15 @@
+diff --git a/v8/BUILD.gn b/v8/BUILD.gn
+index 8956a3dc35..b131ec8588 100644
+--- a/v8/BUILD.gn
++++ b/v8/BUILD.gn
+@@ -1215,7 +1215,9 @@ if (target_os == "android") {
+ } else if (target_os == "ios") {
+   enabled_external_v8_defines += [ "V8_HAVE_TARGET_OS" ]
+   enabled_external_v8_defines += [ "V8_TARGET_OS_IOS" ]
+-} else if (target_os == "linux") {
++} else if (target_os == "linux" || target_os == "hurd") {
++  # GNU/Hurd uses the Linux ABI as far as V8 is concerned (ELF, SysV x86-64,
++  # glibc); kernel-specific features are excluded via __GNU__ in v8config.h.
+   enabled_external_v8_defines += [ "V8_HAVE_TARGET_OS" ]
+   enabled_external_v8_defines += [ "V8_TARGET_OS_LINUX" ]
+ } else if (target_os == "mac") {

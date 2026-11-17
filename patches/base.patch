@@ -1,0 +1,162 @@
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/build_config.h b/base/allocator/partition_allocator/src/partition_alloc/build_config.h
+index a124902743..22fc848c72 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/build_config.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/build_config.h
+@@ -74,7 +74,11 @@
+ #else
+ #define PA_IS_MAC
+ #endif  // defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__GNU__)
++#if defined(__GNU__)
++// GNU/Hurd is built as a flavour of Linux; see //build/build_config.h.
++#define PA_IS_HURD
++#endif
+ #if !PA_BUILDFLAG(IS_CHROMEOS)
+ // Do not define PA_IS_LINUX on Chrome OS build.
+ // The IS_CHROMEOS PA_BUILDFLAG macro is defined in buildflags.h.
+@@ -433,6 +437,13 @@
+ #endif
+ #undef PA_IS_IOS
+ 
++#if defined(PA_IS_HURD)
++#define PA_BUILDFLAG_INTERNAL_IS_HURD() (1)
++#else
++#define PA_BUILDFLAG_INTERNAL_IS_HURD() (0)
++#endif
++#undef PA_IS_HURD
++
+ #if defined(PA_IS_LINUX)
+ #define PA_BUILDFLAG_INTERNAL_IS_LINUX() (1)
+ #else
+diff --git a/base/message_loop/message_pump_epoll.cc b/base/message_loop/message_pump_epoll.cc
+index 91449482c8..76b2cb7c73 100644
+--- a/base/message_loop/message_pump_epoll.cc
++++ b/base/message_loop/message_pump_epoll.cc
+@@ -4,7 +4,14 @@
+ 
+ #include "base/message_loop/message_pump_epoll.h"
+ 
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HURD)
++#include <fcntl.h>
++#include <unistd.h>
++#else
+ #include <sys/eventfd.h>
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -142,7 +149,14 @@ MessagePumpEpoll::MessagePumpEpoll() {
+   epoll_.reset(epoll_create1(/*flags=*/0));
+   PCHECK(epoll_.is_valid());
+ 
++#if BUILDFLAG(IS_HURD)
++  int pipe_fds[2];
++  PCHECK(pipe2(pipe_fds, O_NONBLOCK | O_CLOEXEC) == 0);
++  wake_event_.reset(pipe_fds[0]);
++  wake_event_write_.reset(pipe_fds[1]);
++#else
+   wake_event_.reset(eventfd(0, EFD_NONBLOCK));
++#endif
+   PCHECK(wake_event_.is_valid());
+ 
+   epoll_event wake{.events = EPOLLIN, .data = {.ptr = &wake_event_}};
+@@ -165,8 +179,13 @@ void MessagePumpEpoll::InitializeFeatures() {
+   g_use_batched_version.store(
+       base::FeatureList::IsEnabled(kBatchNativeEventsInMessagePumpEpoll),
+       std::memory_order_relaxed);
++#if BUILDFLAG(IS_HURD)
++  // There is no epoll on GNU/Hurd; poll() is the only implementation.
++  g_use_poll.store(true, std::memory_order_relaxed);
++#else
+   g_use_poll.store(base::FeatureList::IsEnabled(kUsePollForMessagePumpEpoll),
+                    std::memory_order_relaxed);
++#endif
+ }
+ 
+ bool MessagePumpEpoll::WatchFileDescriptor(int fd,
+@@ -303,6 +322,12 @@ void MessagePumpEpoll::Quit() {
+ }
+ 
+ void MessagePumpEpoll::ScheduleWork() {
++#if BUILDFLAG(IS_HURD)
++  const uint8_t byte = 1;
++  ssize_t written = HANDLE_EINTR(write(wake_event_write_.get(), &byte, 1));
++  // EAGAIN means the pipe is full and therefore already readable.
++  DPCHECK(written == 1 || errno == EAGAIN);
++#else
+   const uint64_t value = 1;
+   ssize_t n = HANDLE_EINTR(write(wake_event_.get(), &value, sizeof(value)));
+ 
+@@ -311,6 +336,7 @@ void MessagePumpEpoll::ScheduleWork() {
+   // counter is non-zero and therefore readable, which is enough to ensure that
+   // any pending wait eventually wakes up.
+   DPCHECK(n == sizeof(value) || errno == EAGAIN);
++#endif
+ }
+ 
+ void MessagePumpEpoll::ScheduleDelayedWork(
+@@ -467,8 +493,12 @@ bool MessagePumpEpoll::WaitForEpollEvents(TimeDelta timeout) {
+   // to iterate through the list of watched fds. This value is pretty arbitrary,
+   // the internet suggests that under 1000 fds that epoll isn't noticeably
+   // faster than poll but this isn't easy to empirically measure.
++#if BUILDFLAG(IS_HURD)
++  const bool use_poll = true;
++#else
+   bool use_poll =
+       g_use_poll.load(std::memory_order_relaxed) && entries_.size() < 500;
++#endif
+ 
+   if (use_poll) {
+     if (!GetEventsPoll(epoll_timeout, &poll_events)) {
+@@ -687,9 +717,16 @@ void MessagePumpEpoll::HandleEvent(int fd,
+ void MessagePumpEpoll::HandleWakeUp() {
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   BeginNativeWorkBatch();
++#if BUILDFLAG(IS_HURD)
++  // Drain the wake-up pipe completely; it may hold several wake-ups.
++  uint8_t buffer[64];
++  while (HANDLE_EINTR(read(wake_event_.get(), buffer, sizeof(buffer))) > 0) {
++  }
++#else
+   uint64_t value;
+   ssize_t n = HANDLE_EINTR(read(wake_event_.get(), &value, sizeof(value)));
+   DPCHECK(n == sizeof(value));
++#endif
+ }
+ 
+ void MessagePumpEpoll::BeginNativeWorkBatch() {
+diff --git a/base/message_loop/message_pump_epoll.h b/base/message_loop/message_pump_epoll.h
+index af6940162f..a91ff40452 100644
+--- a/base/message_loop/message_pump_epoll.h
++++ b/base/message_loop/message_pump_epoll.h
+@@ -6,7 +6,14 @@
+ #define BASE_MESSAGE_LOOP_MESSAGE_PUMP_EPOLL_H_
+ 
+ #include <poll.h>
++
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HURD)
++#include "base/message_loop/epoll_shim_hurd.h"
++#else
+ #include <sys/epoll.h>
++#endif
+ 
+ #include <cstdint>
+ #include <map>
+@@ -260,7 +267,12 @@ class BASE_EXPORT MessagePumpEpoll : public MessagePump,
+   ScopedFD epoll_;
+ 
+   // An eventfd object used to wake the pump's thread when scheduling new work.
++  // On GNU/Hurd, which has no eventfd, this is the read end of a pipe and
++  // `wake_event_write_` is its write end.
+   ScopedFD wake_event_;
++#if BUILDFLAG(IS_HURD)
++  ScopedFD wake_event_write_;
++#endif
+ 
+   // Tracks when we should next record periodic metrics.
+   base::TimeTicks next_metrics_time_;

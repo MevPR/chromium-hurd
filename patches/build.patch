@@ -1,0 +1,179 @@
+diff --git a/build/build_config.h b/build/build_config.h
+index 0e3bcb4558..491c8b4b1d 100644
+--- a/build/build_config.h
++++ b/build/build_config.h
+@@ -16,7 +16,7 @@
+ //
+ //  Operating System:
+ //    IS_AIX / IS_ANDROID / IS_ASMJS / IS_CHROMEOS / IS_FREEBSD / IS_FUCHSIA /
+-//    IS_IOS / IS_IOS_MACCATALYST / IS_IOS_TVOS / IS_LINUX / IS_MAC /
++//    IS_HURD / IS_IOS / IS_IOS_MACCATALYST / IS_IOS_TVOS / IS_LINUX / IS_MAC /
+ //    IS_NETBSD / IS_OPENBSD / IS_QNX / IS_SOLARIS / IS_WATCHOS / IS_WIN
+ //  Operating System family:
+ //    IS_APPLE: IOS or MAC or IOS_MACCATALYST or IOS_TVOS or WATCHOS
+@@ -88,7 +88,13 @@
+ #else
+ #define OS_MAC 1
+ #endif  // defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__GNU__)
++#if defined(__GNU__)
++// GNU/Hurd. It is built as a flavour of desktop Linux (OS_LINUX is defined
++// too) because it shares glibc and the GNU userland. Use OS_HURD to exclude
++// code that depends on the Linux kernel.
++#define OS_HURD 1
++#endif
+ #if !defined(OS_CHROMEOS)
+ // Do not define OS_LINUX on Chrome OS build.
+ // The OS_CHROMEOS macro is defined in GN.
+@@ -213,6 +219,12 @@
+ #define BUILDFLAG_INTERNAL_IS_IOS_TVOS() (0)
+ #endif
+ 
++#if defined(OS_HURD)
++#define BUILDFLAG_INTERNAL_IS_HURD() (1)
++#else
++#define BUILDFLAG_INTERNAL_IS_HURD() (0)
++#endif
++
+ #if defined(OS_LINUX)
+ #define BUILDFLAG_INTERNAL_IS_LINUX() (1)
+ #else
+diff --git a/build/config/BUILDCONFIG.gn b/build/config/BUILDCONFIG.gn
+index a8dcb4d467..94a28fbb44 100644
+--- a/build/config/BUILDCONFIG.gn
++++ b/build/config/BUILDCONFIG.gn
+@@ -271,6 +271,9 @@ if (target_os == "android") {
+   } else {
+     _default_toolchain = "//build/toolchain/linux:$target_cpu"
+   }
++} else if (target_os == "hurd") {
++  assert(host_os == "linux", "Hurd builds are cross-compiled on Linux.")
++  _default_toolchain = "//build/toolchain/hurd:clang_$target_cpu"
+ } else if (target_os == "fuchsia") {
+   _default_toolchain = "//build/toolchain/fuchsia:$target_cpu"
+ } else if (target_os == "ios") {
+@@ -337,7 +340,12 @@ is_android = current_os == "android"
+ is_chromeos = current_os == "chromeos"
+ is_fuchsia = current_os == "fuchsia"
+ is_ios = current_os == "ios"
+-is_linux = current_os == "linux"
++
++# GNU/Hurd is treated as a flavour of desktop Linux: it shares glibc and the
++# GNU userland, so is_linux is true for it as well. Code that depends on the
++# Linux kernel itself must additionally check !is_hurd.
++is_hurd = current_os == "hurd"
++is_linux = current_os == "linux" || is_hurd
+ is_mac = current_os == "mac"
+ is_wasm = current_os == "emscripten"
+ is_watchos = current_os == "watchos"
+diff --git a/build/config/clang/clang.gni b/build/config/clang/clang.gni
+index 1e5dc57538..713a0818c6 100644
+--- a/build/config/clang/clang.gni
++++ b/build/config/clang/clang.gni
+@@ -43,7 +43,8 @@ android_supported_cpus = [
+ ]
+ clang_modules_platform_supported =
+     # s390x should work, but IBM doesn't want it enabled for that cpu arch.
+-    (is_linux && current_cpu != "s390x") ||
++    # The Hurd sysroot has no generated modulemaps.
++    (is_linux && !is_hurd && current_cpu != "s390x") ||
+     (is_android &&
+      filter_include(android_supported_cpus, [ current_cpu ]) != []) ||
+     is_apple || is_fuchsia || is_chromeos ||
+diff --git a/build/config/compiler_cpu_abi.gn b/build/config/compiler_cpu_abi.gn
+index ae62bab587..bbc92d1a33 100644
+--- a/build/config/compiler_cpu_abi.gn
++++ b/build/config/compiler_cpu_abi.gn
+@@ -48,7 +48,10 @@ if (is_chromeos_device && is_chromeos) {
+ if ((is_posix && !is_apple) || is_fuchsia) {
+   # simplicity we always explicitly set the architecture.
+   if (current_cpu == "x64") {
+-    if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
++    if (is_hurd) {
++      cpu_abi_cflags += [ "--target=x86_64-unknown-hurd-gnu" ]
++      cpu_abi_ldflags += [ "--target=x86_64-unknown-hurd-gnu" ]
++    } else if (is_clang && !is_android && !is_fuchsia && !is_chromeos_device) {
+       cpu_abi_cflags += [ "--target=x86_64-unknown-linux-gnu" ]
+       cpu_abi_ldflags += [ "--target=x86_64-unknown-linux-gnu" ]
+     } else {
+diff --git a/build/config/linux/pkg-config.py b/build/config/linux/pkg-config.py
+index 75d3548ae5..a8a6243d93 100755
+--- a/build/config/linux/pkg-config.py
++++ b/build/config/linux/pkg-config.py
+@@ -60,6 +60,11 @@ def SetConfigPath(options):
+         sys.exit(1)
+ 
+     libdir = sysroot + '/usr/' + options.system_libdir + '/pkgconfig'
++    # Sysroots assembled from unmodified Debian packages (e.g. GNU/Hurd) keep
++    # .pc files in the multiarch directory.
++    multiarch = {'x64': 'x86_64-gnu'}.get(arch) if options.hurd else None
++    if multiarch:
++        libdir += ':' + sysroot + '/usr/lib/' + multiarch + '/pkgconfig'
+     libdir += ':' + sysroot + '/usr/share/pkgconfig'
+     os.environ['PKG_CONFIG_LIBDIR'] = libdir
+     return libdir
+@@ -119,6 +124,7 @@ def main():
+     parser.add_option('-v', action='append', dest='strip_out', type='string')
+     parser.add_option('-s', action='store', dest='sysroot', type='string')
+     parser.add_option('-a', action='store', dest='arch', type='string')
++    parser.add_option('--hurd', action='store_true', dest='hurd')
+     parser.add_option(
+         '--system_libdir',
+         action='store',
+diff --git a/build/config/linux/pkg_config.gni b/build/config/linux/pkg_config.gni
+index d637bd04af..e634f51b8b 100644
+--- a/build/config/linux/pkg_config.gni
++++ b/build/config/linux/pkg_config.gni
+@@ -89,6 +89,9 @@ if (sysroot != "") {
+     "-a",
+     current_cpu,
+   ]
++  if (is_hurd) {
++    common_pkg_config_args += [ "--hurd" ]
++  }
+ }
+ 
+ if (pkg_config != "") {
+diff --git a/build/config/rust.gni b/build/config/rust.gni
+index 3df7506c34..f9797588ef 100644
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -200,7 +200,10 @@ if (enable_rust) {
+ # (see '*_toolchain_supports_platform above') to enable experimentation with
+ # other toolchains.
+ rust_abi_target = ""
+-if (is_linux || is_chromeos) {
++if (is_hurd) {
++  assert(current_cpu == "x64", "Only x86_64 GNU/Hurd is supported")
++  rust_abi_target = "x86_64-unknown-hurd-gnu"
++} else if (is_linux || is_chromeos) {
+   if (current_cpu == "arm64") {
+     rust_abi_target = "aarch64-unknown-linux-gnu"
+   } else if (current_cpu == "x86") {
+diff --git a/build/config/sysroot.gni b/build/config/sysroot.gni
+index e7aaa18479..03257a7821 100644
+--- a/build/config/sysroot.gni
++++ b/build/config/sysroot.gni
+@@ -24,6 +24,9 @@ if (sysroot == "") {
+   if (current_os == target_os && current_cpu == target_cpu &&
+       target_sysroot != "") {
+     sysroot = target_sysroot
++  } else if (target_os == "hurd" && !is_hurd) {
++    # Host tools of a Hurd cross build use the build machine's libraries.
++    sysroot = ""
+   } else if (is_android) {
+     import("//build/config/android/config.gni")
+ 
+diff --git a/build/rust/known-target-triples.txt b/build/rust/known-target-triples.txt
+index fc4780bf65..0848f01865 100644
+--- a/build/rust/known-target-triples.txt
++++ b/build/rust/known-target-triples.txt
+@@ -40,6 +40,7 @@ x86_64-apple-tvos
+ x86_64-linux-android
+ x86_64-pc-windows-msvc
+ x86_64-unknown-fuchsia
++x86_64-unknown-hurd-gnu
+ x86_64-unknown-linux-gnu
+ powerpc64le-unknown-linux-gnu
+ s390x-unknown-linux-gnu

@@ -1,0 +1,8 @@
+# Applied in order by scripts/apply-patches.sh
+build.patch
+base.patch
+v8.patch
+third_party-abseil-cpp.patch
+third_party-libc++.patch
+third_party-perfetto.patch
+ui.patch

@@ -1,0 +1,59 @@
+# Seed packages for the Debian GNU/Hurd amd64 sysroot.
+# Dependencies are resolved transitively by scripts/make-sysroot.py.
+# Not available on hurd-amd64 (and disabled in config/args.gn):
+#   libasound2-dev, libudev-dev, libgbm-dev, libva-dev, libwayland-dev
+
+# C library, kernel and Hurd headers
+libc0.3-dev
+hurd-dev
+gnumach-dev
+libgcc-15-dev
+
+# Core
+zlib1g-dev
+libffi-dev
+libexpat1-dev
+libglib2.0-dev
+libdbus-1-dev
+libnss3-dev
+libnspr4-dev
+libkrb5-dev
+libcups2-dev
+libpci-dev
+libsecret-1-dev
+
+# Graphics / X11
+libx11-dev
+libx11-xcb-dev
+libxcb1-dev
+libxcb-shm0-dev
+libxcomposite-dev
+libxdamage-dev
+libxext-dev
+libxfixes-dev
+libxi-dev
+libxkbcommon-dev
+libxrandr-dev
+libxrender-dev
+libxshmfence-dev
+libxtst-dev
+libxss-dev
+libdrm-dev
+libgl-dev
+libegl-dev
+libgles-dev
+mesa-common-dev
+
+# Toolkit / text
+libgtk-3-dev
+libpango1.0-dev
+libcairo2-dev
+libatk1.0-dev
+libatk-bridge2.0-dev
+libatspi2.0-dev
+libfontconfig-dev
+libfreetype-dev
+libharfbuzz-dev
+
+# Audio
+libpulse-dev
