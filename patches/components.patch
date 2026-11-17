@@ -23,6 +23,23 @@ index 879b0a5d1e..f9c5e7d809 100644
  }
  
  }  // namespace internal
+diff --git a/components/cross_device/nearby/system_clock.cc b/components/cross_device/nearby/system_clock.cc
+index cd30c69a01..ac46799545 100644
+--- a/components/cross_device/nearby/system_clock.cc
++++ b/components/cross_device/nearby/system_clock.cc
+@@ -34,7 +34,12 @@ absl::Time SystemClock::ElapsedRealtime() {
+   // does not increase when system is suspended. We instead use clock_gettime
+   // directly. See https://crbug.com/166153.
+   struct timespec ts = {};
++#if defined(CLOCK_BOOTTIME)
+   const int ret = clock_gettime(CLOCK_BOOTTIME, &ts);
++#else
++  // E.g. GNU/Hurd, which does not suspend: the monotonic clock is equivalent.
++  const int ret = clock_gettime(CLOCK_MONOTONIC, &ts);
++#endif
+   DCHECK_EQ(ret, 0);
+   return absl::TimeFromTimespec(ts);
+ #else
 diff --git a/components/dbus/xdg/file_transfer_portal.cc b/components/dbus/xdg/file_transfer_portal.cc
 index 0fbd58daa7..61d5bb75de 100644
 --- a/components/dbus/xdg/file_transfer_portal.cc
@@ -40,6 +57,105 @@ index 0fbd58daa7..61d5bb75de 100644
        if (fd < 0) {
          LOG(ERROR) << "Failed to open file for transfer: " << file;
        } else {
+diff --git a/components/named_mojo_ipc_server/connection_info.h b/components/named_mojo_ipc_server/connection_info.h
+index dbdad3bdc6..d40298add1 100644
+--- a/components/named_mojo_ipc_server/connection_info.h
++++ b/components/named_mojo_ipc_server/connection_info.h
+@@ -32,6 +32,14 @@ struct ConnectionInfo {
+   base::ProcessId pid{};
+ #if BUILDFLAG(IS_MAC)
+   audit_token_t audit_token{};
++#elif BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no struct ucred. Peer credentials are never available there,
++  // so connections are rejected (see the Linux endpoint connector).
++  struct {
++    pid_t pid;
++    uid_t uid;
++    gid_t gid;
++  } credentials{};
+ #elif BUILDFLAG(IS_LINUX)
+   ucred credentials{};
+ #elif BUILDFLAG(IS_WIN)
+diff --git a/components/named_mojo_ipc_server/named_mojo_server_endpoint_connector_linux.cc b/components/named_mojo_ipc_server/named_mojo_server_endpoint_connector_linux.cc
+index c5cf0b732f..a962430050 100644
+--- a/components/named_mojo_ipc_server/named_mojo_server_endpoint_connector_linux.cc
++++ b/components/named_mojo_ipc_server/named_mojo_server_endpoint_connector_linux.cc
+@@ -84,6 +84,12 @@ void NamedMojoServerEndpointConnectorLinux::OnSocketReady() {
+     return;
+   }
+ 
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd provides no way to authenticate the peer. Fail closed.
++  LOG(ERROR) << "Peer credentials are not available on GNU/Hurd; "
++                "rejecting connection.";
++  return;
++#else
+   auto info = std::make_unique<ConnectionInfo>();
+   socklen_t len = sizeof(info->credentials);
+   if (getsockopt(connection_fd.get(), SOL_SOCKET, SO_PEERCRED,
+@@ -101,6 +107,7 @@ void NamedMojoServerEndpointConnectorLinux::OnSocketReady() {
+   }
+   delegate_.AsyncCall(&Delegate::OnClientConnected)
+       .WithArgs(std::move(endpoint), std::move(info));
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ bool NamedMojoServerEndpointConnectorLinux::TryStart() {
+diff --git a/components/os_crypt/async/browser/secret_portal_key_provider.cc b/components/os_crypt/async/browser/secret_portal_key_provider.cc
+index 5527777ca5..28e442217c 100644
+--- a/components/os_crypt/async/browser/secret_portal_key_provider.cc
++++ b/components/os_crypt/async/browser/secret_portal_key_provider.cc
+@@ -5,7 +5,14 @@
+ #include "components/os_crypt/async/browser/secret_portal_key_provider.h"
+ 
+ #include <fcntl.h>
++
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HURD)
++#include <limits.h>  // PATH_MAX is defined by the build on GNU/Hurd.
++#else
+ #include <linux/limits.h>
++#endif
+ 
+ #include <array>
+ #include <utility>
+diff --git a/components/power_metrics/BUILD.gn b/components/power_metrics/BUILD.gn
+index ddcc4237b7..4db32aabc7 100644
+--- a/components/power_metrics/BUILD.gn
++++ b/components/power_metrics/BUILD.gn
+@@ -41,7 +41,8 @@ static_library("power_metrics") {
+     ldflags = [ "/DELAYLOAD:setupapi.dll" ]
+   }
+ 
+-  if (is_linux || is_chromeos) {
++  # perf_event_open() does not exist on GNU/Hurd.
++  if ((is_linux && !is_hurd) || is_chromeos) {
+     sources += [
+       "energy_metrics_provider_linux.cc",
+       "energy_metrics_provider_linux.h",
+diff --git a/components/power_metrics/energy_metrics_provider.cc b/components/power_metrics/energy_metrics_provider.cc
+index 29683e05ff..ab92480d7a 100644
+--- a/components/power_metrics/energy_metrics_provider.cc
++++ b/components/power_metrics/energy_metrics_provider.cc
+@@ -7,7 +7,7 @@
+ #include "build/build_config.h"
+ #if BUILDFLAG(IS_WIN)
+ #include "components/power_metrics/energy_metrics_provider_win.h"
+-#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#elif (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ #include "components/power_metrics/energy_metrics_provider_linux.h"
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+@@ -20,7 +20,7 @@ EnergyMetricsProvider::~EnergyMetricsProvider() = default;
+ std::unique_ptr<EnergyMetricsProvider> EnergyMetricsProvider::Create() {
+ #if BUILDFLAG(IS_WIN)
+   return EnergyMetricsProviderWin::Create();
+-#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#elif (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   return EnergyMetricsProviderLinux::Create();
+ #else
+   return nullptr;
 diff --git a/components/variations/field_trial_config/BUILD.gn b/components/variations/field_trial_config/BUILD.gn
 index ae6d8ef5a5..c25657af39 100644
 --- a/components/variations/field_trial_config/BUILD.gn

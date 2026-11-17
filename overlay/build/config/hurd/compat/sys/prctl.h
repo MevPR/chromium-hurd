@@ -6,9 +6,10 @@
 #define BUILD_CONFIG_HURD_COMPAT_SYS_PRCTL_H_
 
 // Minimal prctl(2) for GNU/Hurd, which has no such call. Chromium mostly uses
-// it to name threads; that is mapped onto pthread_{set,get}name_np(). All
-// other options fail with EINVAL, which callers already handle because they
-// must cope with older Linux kernels.
+// it to name threads; that is mapped onto pthread_{set,get}name_np().
+// PR_{GET,SET}_DUMPABLE report/accept the Hurd's fixed behaviour. All other
+// options fail with EINVAL, which callers already handle because they must
+// cope with older Linux kernels.
 //
 // This directory is only on the include path when building for the Hurd
 // (see //build/config/compiler:compiler).
@@ -62,8 +63,13 @@ static inline int prctl(int option, ...) {
       break;
     }
     case PR_GET_DUMPABLE:
-      // Core dumps are always possible.
+      // Core dumps (and debugging) are always possible on the Hurd.
       result = 1;
+      break;
+    case PR_SET_DUMPABLE:
+      // There is no per-process dumpable flag to change; accept the request
+      // so callers that toggle it (e.g. memory instrumentation) keep working.
+      result = 0;
       break;
     default:
       errno = EINVAL;

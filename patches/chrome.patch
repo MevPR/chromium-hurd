@@ -1,0 +1,64 @@
+diff --git a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc b/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc
+index 303091b905..67a222a4fe 100644
+--- a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc
++++ b/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc
+@@ -4,7 +4,11 @@
+ 
+ #include "chrome/browser/media/router/discovery/discovery_network_list_wifi.h"
+ 
++#include "build/build_config.h"
++
++#if !BUILDFLAG(IS_HURD)
+ #include <linux/wireless.h>
++#endif
+ #include <string.h>
+ #include <sys/ioctl.h>
+ #include <sys/socket.h>
+@@ -19,6 +23,10 @@ namespace media_router {
+ 
+ bool MaybeGetWifiSSID(const std::string& if_name, std::string* ssid_out) {
+   CHECK(ssid_out, base::NotFatalUntil::M161);
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no wireless extensions.
++  return false;
++#else
+ 
+   base::ScopedFD ioctl_socket(socket(AF_INET, SOCK_DGRAM, 0));
+   if (!ioctl_socket.is_valid()) {
+@@ -43,6 +51,7 @@ bool MaybeGetWifiSSID(const std::string& if_name, std::string* ssid_out) {
+     return true;
+   }
+   return false;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ }  // namespace media_router
+diff --git a/chrome/browser/notifications/notification_platform_bridge_linux.cc b/chrome/browser/notifications/notification_platform_bridge_linux.cc
+index eb6ee80802..4a54ad05c8 100644
+--- a/chrome/browser/notifications/notification_platform_bridge_linux.cc
++++ b/chrome/browser/notifications/notification_platform_bridge_linux.cc
+@@ -51,6 +51,7 @@
+ #include "base/time/time.h"
+ #include "base/types/expected.h"
+ #include "base/version.h"
++#include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/lifetime/termination_notification.h"
+ #include "chrome/browser/notifications/notification_display_service_impl.h"
+@@ -368,6 +369,8 @@ NotificationResources WriteNotificationResourceFiles(
+   result.has_image = WriteImageFile(image, dir_path.Append("image.png"));
+   if (result.has_icon) {
+     result.icon_bytes = icon;
++#if !BUILDFLAG(IS_HURD)
++    // GNU/Hurd has no memfd; the icon is only passed as a file there.
+     if (icon && icon->size() > 0) {
+       int memfd =
+           memfd_create("notification_icon", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+@@ -383,6 +386,7 @@ NotificationResources WriteNotificationResourceFiles(
+         }
+       }
+     }
++#endif  // !BUILDFLAG(IS_HURD)
+   }
+ 
+   result.dir_path = dir_path;

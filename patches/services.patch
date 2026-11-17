@@ -1,0 +1,99 @@
+diff --git a/services/device/serial/serial_io_handler_posix.cc b/services/device/serial/serial_io_handler_posix.cc
+index 21489b26c3..ebf8d392f0 100644
+--- a/services/device/serial/serial_io_handler_posix.cc
++++ b/services/device/serial/serial_io_handler_posix.cc
+@@ -19,7 +19,7 @@
+ #include "components/device_event_log/device_event_log.h"
+ #include "services/device/public/cpp/device_features.h"
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ #include <asm-generic/ioctls.h>
+ #include <linux/serial.h>
+ 
+@@ -84,7 +84,7 @@ bool BitrateToSpeedConstant(int bitrate, speed_t* speed) {
+ #undef BITRATE_TO_SPEED_CASE
+ }
+ 
+-#if !BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
++#if (!BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_HURD)) && !BUILDFLAG(IS_CHROMEOS)
+ // Convert a known nominal speed into an integral bitrate. Returns |true|
+ // if the conversion was successful and |false| otherwise.
+ bool SpeedConstantToBitrate(speed_t speed, int* bitrate) {
+@@ -158,7 +158,7 @@ void SerialIoHandlerPosix::CancelWriteImpl() {
+ }
+ 
+ bool SerialIoHandlerPosix::ConfigurePortImpl() {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   struct termios2 config;
+   if (ioctl(file().GetPlatformFile(), TCGETS2, &config) < 0) {
+ #else
+@@ -193,7 +193,7 @@ bool SerialIoHandlerPosix::ConfigurePortImpl() {
+   bool need_iossiospeed = false;
+ #endif
+   if (BitrateToSpeedConstant(options().bitrate, &bitrate_opt)) {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+     config.c_cflag &= ~CBAUD;
+     config.c_cflag |= bitrate_opt;
+ #else
+@@ -202,7 +202,7 @@ bool SerialIoHandlerPosix::ConfigurePortImpl() {
+ #endif
+   } else {
+     // Attempt to set a custom speed.
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+     config.c_cflag &= ~CBAUD;
+     config.c_cflag |= CBAUDEX;
+     config.c_ispeed = config.c_ospeed = options().bitrate;
+@@ -274,7 +274,7 @@ bool SerialIoHandlerPosix::ConfigurePortImpl() {
+     config.c_cflag &= ~CRTSCTS;
+   }
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   if (ioctl(file().GetPlatformFile(), TCSETS2, &config) < 0) {
+ #else
+   if (tcsetattr(file().GetPlatformFile(), TCSANOW, &config) != 0) {
+@@ -556,7 +556,7 @@ bool SerialIoHandlerPosix::SetControlSignals(
+ }
+ 
+ mojom::SerialConnectionInfoPtr SerialIoHandlerPosix::GetPortInfo() const {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   struct termios2 config;
+   if (ioctl(file().GetPlatformFile(), TCGETS2, &config) < 0) {
+ #else
+@@ -568,7 +568,7 @@ mojom::SerialConnectionInfoPtr SerialIoHandlerPosix::GetPortInfo() const {
+   }
+ 
+   auto info = mojom::SerialConnectionInfo::New();
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   // Linux forces c_ospeed to contain the correct value, which is nice.
+   info->bitrate = config.c_ospeed;
+ #else
+diff --git a/services/device/usb/BUILD.gn b/services/device/usb/BUILD.gn
+index 72e7a1cc72..03559b69de 100644
+--- a/services/device/usb/BUILD.gn
++++ b/services/device/usb/BUILD.gn
+@@ -114,7 +114,8 @@ static_library("usb") {
+     deps += [ "//third_party/libusb" ]
+   }
+ 
+-  if (is_linux || is_chromeos) {
++  # GNU/Hurd has no usbfs (and no udev, so UsbService::Create() is null).
++  if ((is_linux && !is_hurd) || is_chromeos) {
+     sources += [
+       "usb_device_linux.cc",
+       "usb_device_linux.h",
+@@ -131,7 +132,7 @@ static_library("usb") {
+     deps += [ "//device/udev_linux" ]
+   }
+ 
+-  if (is_android || is_chromeos || is_linux) {
++  if (is_android || is_chromeos || (is_linux && !is_hurd)) {
+     sources += [
+       "usb_device_handle_usbfs.cc",
+       "usb_device_handle_usbfs.h",

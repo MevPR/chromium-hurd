@@ -1,0 +1,43 @@
+diff --git a/media/capture/BUILD.gn b/media/capture/BUILD.gn
+index 4db94b97a6..ae9edd0278 100644
+--- a/media/capture/BUILD.gn
++++ b/media/capture/BUILD.gn
+@@ -193,7 +193,8 @@ component("capture_lib") {
+     public_deps += [ "video/win" ]
+   }
+ 
+-  if (is_linux || is_chromeos) {
++  # V4L2 does not exist on GNU/Hurd.
++  if ((is_linux && !is_hurd) || is_chromeos) {
+     deps += [ "video/linux" ]
+   }
+ 
+diff --git a/media/capture/video/create_video_capture_device_factory.cc b/media/capture/video/create_video_capture_device_factory.cc
+index ed8a138630..54a67de96a 100644
+--- a/media/capture/video/create_video_capture_device_factory.cc
++++ b/media/capture/video/create_video_capture_device_factory.cc
+@@ -17,7 +17,9 @@
+ #include "media/capture/video/file_video_capture_device_factory.h"
+ #endif
+ 
+-#if BUILDFLAG(IS_LINUX)
++#if BUILDFLAG(IS_HURD)
++// No video capture backend (V4L2) on GNU/Hurd.
++#elif BUILDFLAG(IS_LINUX)
+ #include "media/capture/video/linux/video_capture_device_factory_linux.h"
+ #elif BUILDFLAG(IS_CHROMEOS)
+ #include "media/capture/video/chromeos/public/cros_features.h"
+@@ -64,7 +66,12 @@ std::unique_ptr<VideoCaptureDeviceFactory>
+ CreatePlatformSpecificVideoCaptureDeviceFactory(
+     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+     gpu::GpuDriverBugWorkarounds* gpu_workarounds) {
+-#if BUILDFLAG(IS_LINUX)
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no video capture devices: report an empty device list.
++  auto factory = std::make_unique<FakeVideoCaptureDeviceFactory>();
++  factory->SetToCustomDevicesConfig({});
++  return factory;
++#elif BUILDFLAG(IS_LINUX)
+   return std::make_unique<VideoCaptureDeviceFactoryLinux>(ui_task_runner);
+ #elif BUILDFLAG(IS_CHROMEOS)
+   if (base::SysInfo::IsRunningOnChromeOS())
