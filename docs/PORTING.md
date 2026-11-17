@@ -85,6 +85,15 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
 * There is no `PATH_MAX`. The build defines `PATH_MAX=4096` for Hurd targets.
 * glibc explicitly *undefines* `IOV_MAX` on the Hurd, so it cannot be defined
   from the command line; patch the user instead.
+* `__MACH__` is predefined (GNU Mach). Code that uses `__MACH__` to mean
+  "Apple" must also check `!defined(__GNU__)` (seen in SwiftShader,
+  XNNPACK, cpu_features). Checks of the form `__ELF__ … #elif __MACH__` are
+  fine because the Hurd uses ELF.
+* The Hurd's `_IO()`/`_IOR()`/`_IOW()`/`_IOWR()` encode a type description
+  and need an `_IOT_<struct name>` macro for every struct type. Linux-style
+  `_IOWR('x', n, struct foo)` does not compile. For ioctls that only exist
+  for Linux drivers (DRM, DMA-BUF, sync files) the patches spell out the
+  Linux request numbers instead.
 * `pthread_t` is an integer handle, not a pointer.
 * Error numbers start at `0x40000000`.
 * `syscall()`, `sched_getaffinity()`, `pthread_setschedparam()` and others are

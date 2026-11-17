@@ -40,3 +40,17 @@ index 0fbd58daa7..61d5bb75de 100644
        if (fd < 0) {
          LOG(ERROR) << "Failed to open file for transfer: " << file;
        } else {
+diff --git a/components/variations/field_trial_config/BUILD.gn b/components/variations/field_trial_config/BUILD.gn
+index ae6d8ef5a5..c25657af39 100644
+--- a/components/variations/field_trial_config/BUILD.gn
++++ b/components/variations/field_trial_config/BUILD.gn
+@@ -20,6 +20,9 @@ action("field_trial_testing_config_action") {
+ 
+   if (current_os == "win") {
+     platform = "windows"
++  } else if (current_os == "hurd") {
++    # GNU/Hurd uses the desktop Linux field trial configuration.
++    platform = "linux"
+   } else {
+     platform = current_os
+   }
