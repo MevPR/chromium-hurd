@@ -1,0 +1,46 @@
+diff --git a/third_party/webrtc/rtc_base/physical_socket_server.h b/third_party/webrtc/rtc_base/physical_socket_server.h
+index 327930da4d..bb1a9aa32e 100644
+--- a/third_party/webrtc/rtc_base/physical_socket_server.h
++++ b/third_party/webrtc/rtc_base/physical_socket_server.h
+@@ -22,12 +22,13 @@
+ #include "rtc_base/socket_address.h"
+ 
+ #if defined(WEBRTC_POSIX)
+-#if defined(WEBRTC_LINUX)
++#if defined(WEBRTC_LINUX) && !defined(__GNU__)
+ // On Linux, use epoll.
+ #include <sys/epoll.h>
+ 
+ #define WEBRTC_USE_EPOLL 1
+-#elif defined(WEBRTC_FUCHSIA) || defined(WEBRTC_MAC)
++#elif defined(WEBRTC_FUCHSIA) || defined(WEBRTC_MAC) || defined(__GNU__)
++// GNU/Hurd has no epoll either.
+ // Fuchsia implements select and poll but not epoll, and testing shows that poll
+ // is faster than select.
+ #include <poll.h>
+diff --git a/third_party/webrtc/rtc_base/platform_thread_types.cc b/third_party/webrtc/rtc_base/platform_thread_types.cc
+index 20bf4afc44..1f295ae4b3 100644
+--- a/third_party/webrtc/rtc_base/platform_thread_types.cc
++++ b/third_party/webrtc/rtc_base/platform_thread_types.cc
+@@ -11,7 +11,11 @@
+ #include "rtc_base/platform_thread_types.h"
+ 
+ // IWYU pragma: begin_keep
+-#if defined(WEBRTC_LINUX)
++#if defined(WEBRTC_LINUX) && defined(__GNU__)
++// GNU/Hurd: no kernel thread ids, prctl() comes from the compat headers.
++#include <pthread.h>
++#include <sys/prctl.h>
++#elif defined(WEBRTC_LINUX)
+ #include <linux/prctl.h>
+ #include <sys/prctl.h>
+ #include <sys/syscall.h>
+@@ -50,6 +54,8 @@ PlatformThreadId CurrentThreadId() {
+   return gettid();
+ #elif defined(WEBRTC_FUCHSIA)
+   return zx_thread_self();
++#elif defined(WEBRTC_LINUX) && defined(__GNU__)
++  return static_cast<PlatformThreadId>(pthread_self());
+ #elif defined(WEBRTC_LINUX)
+   return syscall(__NR_gettid);
+ #elif defined(__EMSCRIPTEN__)

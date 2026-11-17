@@ -9,5 +9,11 @@ be impractical:
 
 * `sys/prctl.h`: `prctl()` supporting `PR_SET_NAME` / `PR_GET_NAME`
   (mapped to `pthread_{set,get}name_np()`); other options fail with `EINVAL`.
+* `sys/inotify.h`: inotify types; all functions fail with `ENOSYS`, which
+  callers already handle (inotify can run out of instances on Linux too).
+* `linux/netlink.h`, `linux/rtnetlink.h`, `linux/if_addr.h`: the netlink
+  data structures used by `//net`'s address tracking. The Hurd has no
+  netlink; `socket(AF_NETLINK, ...)` fails at runtime and
+  `AddressTrackerLinux` then reports the network as online.
 
 Keep this list short. Prefer fixing the user when there are only a few.

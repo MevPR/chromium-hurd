@@ -1,0 +1,17 @@
+diff --git a/components/dbus/xdg/file_transfer_portal.cc b/components/dbus/xdg/file_transfer_portal.cc
+index 0fbd58daa7..61d5bb75de 100644
+--- a/components/dbus/xdg/file_transfer_portal.cc
++++ b/components/dbus/xdg/file_transfer_portal.cc
+@@ -124,7 +124,12 @@ class FileTransferSession : public base::SelfDeleting {
+     std::vector<base::ScopedFD> fds;
+     fds.reserve(files.size());
+     for (const auto& file : files) {
++#if defined(O_PATH)
+       int fd = HANDLE_EINTR(open(file.c_str(), O_PATH | O_CLOEXEC));
++#else
++      // E.g. GNU/Hurd, which has no O_PATH.
++      int fd = HANDLE_EINTR(open(file.c_str(), O_RDONLY | O_CLOEXEC));
++#endif
+       if (fd < 0) {
+         LOG(ERROR) << "Failed to open file for transfer: " << file;
+       } else {

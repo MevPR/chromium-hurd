@@ -1,0 +1,112 @@
+diff --git a/net/socket/udp_socket_posix.cc b/net/socket/udp_socket_posix.cc
+index cb0728ea8d..a4dc3a584e 100644
+--- a/net/socket/udp_socket_posix.cc
++++ b/net/socket/udp_socket_posix.cc
+@@ -77,6 +77,11 @@
+ #include "base/mac/mac_util.h"
+ #endif  // BUILDFLAG(IS_MAC)
+ 
++#if !defined(IP_DEFAULT_MULTICAST_TTL)
++// Not defined on GNU/Hurd; this is the value from RFC 1112 used elsewhere.
++#define IP_DEFAULT_MULTICAST_TTL 1
++#endif
++
+ namespace net {
+ 
+ namespace {
+@@ -282,8 +287,11 @@ SetSocketOptionGroResult GetSetSocketOptionGroResult(int setsockopt_rv,
+   if (setsockopt_rv == 0) {
+     return SetSocketOptionGroResult::kSuccess;
+   }
+-  if (saved_errno == ENOPROTOOPT || saved_errno == EOPNOTSUPP ||
+-      saved_errno == ENOPKG) {
++  if (saved_errno == ENOPROTOOPT || saved_errno == EOPNOTSUPP
++#if defined(ENOPKG)
++      || saved_errno == ENOPKG
++#endif
++  ) {
+     return SetSocketOptionGroResult::kUnsupportedKernel;
+   }
+   return SetSocketOptionGroResult::kOtherError;
+@@ -732,7 +740,9 @@ int UDPSocketPosix::SetDoNotFragment() {
+   DCHECK_NE(socket_, kInvalidSocket);
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+ 
+-#if !defined(IP_PMTUDISC_DO) && !BUILDFLAG(IS_MAC)
++#if (!defined(IP_PMTUDISC_DO) || !defined(IP_MTU_DISCOVER)) && \
++    !BUILDFLAG(IS_MAC)
++  // E.g. GNU/Hurd defines the IP_PMTUDISC_* values but not the option.
+   return ERR_NOT_IMPLEMENTED;
+ 
+ #elif BUILDFLAG(IS_MAC)
+@@ -798,12 +808,17 @@ int UDPSocketPosix::SetRecvTos() {
+ #endif  // BUILDFLAG(IS_APPLE)
+   }
+ 
++#if defined(IP_RECVTOS)
+   int rv = setsockopt(socket_, IPPROTO_IP, IP_RECVTOS, &ecn, sizeof(ecn));
+   return rv == 0 ? OK : MapSystemError(errno);
++#else
++  // E.g. GNU/Hurd.
++  return ERR_NOT_IMPLEMENTED;
++#endif
+ }
+ 
+ void UDPSocketPosix::SetMsgConfirm(bool confirm) {
+-#if !BUILDFLAG(IS_APPLE)
++#if !BUILDFLAG(IS_APPLE) && defined(MSG_CONFIRM)
+   if (confirm) {
+     sendto_flags_ |= MSG_CONFIRM;
+   } else {
+@@ -1625,6 +1640,9 @@ int UDPSocketPosix::SetSourceGroupMembership(const IPAddress& group_address,
+                                              int option) const {
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_FUCHSIA)
+   return ERR_NOT_IMPLEMENTED;
++#elif !defined(MCAST_JOIN_SOURCE_GROUP)
++  // E.g. GNU/Hurd has no source-specific multicast.
++  return ERR_NOT_IMPLEMENTED;
+ #else
+   uint32_t interface_index = multicast_interface_;
+ #if BUILDFLAG(IS_MAC)
+@@ -1661,8 +1679,12 @@ int UDPSocketPosix::JoinSourceGroup(const IPAddress& group_address,
+     return ERR_INVALID_ARGUMENT;
+   }
+ 
++#if defined(MCAST_JOIN_SOURCE_GROUP)
+   return SetSourceGroupMembership(group_address, source_address,
+                                   MCAST_JOIN_SOURCE_GROUP);
++#else
++  return ERR_NOT_IMPLEMENTED;
++#endif
+ }
+ 
+ int UDPSocketPosix::LeaveSourceGroup(const IPAddress& group_address,
+@@ -1677,8 +1699,12 @@ int UDPSocketPosix::LeaveSourceGroup(const IPAddress& group_address,
+     return ERR_INVALID_ARGUMENT;
+   }
+ 
++#if defined(MCAST_LEAVE_SOURCE_GROUP)
+   return SetSourceGroupMembership(group_address, source_address,
+                                   MCAST_LEAVE_SOURCE_GROUP);
++#else
++  return ERR_NOT_IMPLEMENTED;
++#endif
+ }
+ 
+ int UDPSocketPosix::SetMulticastInterface(uint32_t interface_index) {
+diff --git a/net/socket/unix_domain_server_socket_posix.cc b/net/socket/unix_domain_server_socket_posix.cc
+index 4cb79bdd75..c60470e713 100644
+--- a/net/socket/unix_domain_server_socket_posix.cc
++++ b/net/socket/unix_domain_server_socket_posix.cc
+@@ -36,7 +36,10 @@ UnixDomainServerSocket::~UnixDomainServerSocket() = default;
+ // static
+ bool UnixDomainServerSocket::GetPeerCredentials(SocketDescriptor socket,
+                                                 Credentials* credentials) {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd provides neither SO_PEERCRED nor getpeereid(). Fail closed.
++  return false;
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
+     BUILDFLAG(IS_FUCHSIA)
+   struct ucred user_cred;
+   socklen_t len = sizeof(user_cred);

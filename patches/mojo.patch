@@ -1,0 +1,107 @@
+diff --git a/mojo/core/BUILD.gn b/mojo/core/BUILD.gn
+index 782c1d3058..6e773d2cbd 100644
+--- a/mojo/core/BUILD.gn
++++ b/mojo/core/BUILD.gn
+@@ -109,7 +109,8 @@ source_set("impl_for_embedder") {
+       "channel_posix.h",
+     ]
+ 
+-    if (is_linux || is_chromeos || is_android) {
++    # The shared memory channel upgrade needs memfd and futex.
++    if ((is_linux && !is_hurd) || is_chromeos || is_android) {
+       sources += [
+         "channel_linux.cc",
+         "channel_linux.h",
+diff --git a/mojo/core/channel.cc b/mojo/core/channel.cc
+index b2fff23c5d..52b8eba1e9 100644
+--- a/mojo/core/channel.cc
++++ b/mojo/core/channel.cc
+@@ -1304,8 +1304,10 @@ bool Channel::OnControlMessage(Message::MessageType message_type,
+   return false;
+ }
+ 
+-// Currently only CrOs, Linux, and Android support upgrades.
+-#if !(BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID))
++// Currently only CrOs, Linux, and Android support upgrades (not GNU/Hurd,
++// which lacks memfd and futex).
++#if !(BUILDFLAG(IS_CHROMEOS) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || \
++      BUILDFLAG(IS_ANDROID))
+ // static
+ MOJO_SYSTEM_IMPL_EXPORT bool Channel::SupportsChannelUpgrade() {
+   return false;
+diff --git a/mojo/core/channel_posix.cc b/mojo/core/channel_posix.cc
+index 29ad72a05a..6f645ce586 100644
+--- a/mojo/core/channel_posix.cc
++++ b/mojo/core/channel_posix.cc
+@@ -32,7 +32,8 @@
+ #include "mojo/public/cpp/platform/socket_utils_posix.h"
+ #include "mojo/core/configuration.h"
+ 
+-#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID))
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ #include "mojo/core/channel_linux.h"
+ #endif
+ 
+@@ -621,7 +622,8 @@ scoped_refptr<Channel> Channel::Create(
+     ConnectionParams connection_params,
+     HandlePolicy handle_policy,
+     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner) {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+   return new ChannelLinux(delegate, std::move(connection_params), handle_policy,
+                           io_task_runner);
+ #else
+@@ -630,7 +632,8 @@ scoped_refptr<Channel> Channel::Create(
+ #endif
+ }
+ 
+-#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID))
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ // static
+ bool Channel::SupportsChannelUpgrade() {
+   return ChannelLinux::KernelSupportsUpgradeRequirements() &&
+diff --git a/mojo/core/embedder/embedder.cc b/mojo/core/embedder/embedder.cc
+index cfaa689b7d..90806b101e 100644
+--- a/mojo/core/embedder/embedder.cc
++++ b/mojo/core/embedder/embedder.cc
+@@ -25,7 +25,8 @@
+ #include "mojo/core/ipcz_driver/transport.h"
+ #include "mojo/public/c/system/thunks.h"
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ #include "mojo/core/channel_linux.h"
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
+         // BUILDFLAG(IS_ANDROID)
+@@ -43,7 +44,8 @@ void InitFeatures() {
+   CHECK(base::FeatureList::GetInstance());
+ 
+ #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(MOJO_USE_APPLE_CHANNEL)
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+   bool shared_mem_enabled = base::FeatureList::IsEnabled(kMojoUseEventFd);
+   int num_pages = kMojoUseEventFdPages.Get();
+   if (num_pages < 0) {
+diff --git a/mojo/public/cpp/platform/socket_utils_posix.cc b/mojo/public/cpp/platform/socket_utils_posix.cc
+index 7c1da01379..dd1d32c640 100644
+--- a/mojo/public/cpp/platform/socket_utils_posix.cc
++++ b/mojo/public/cpp/platform/socket_utils_posix.cc
+@@ -26,7 +26,12 @@ bool IsRecoverableError() {
+ }
+ 
+ bool GetPeerEuid(base::PlatformFile fd, uid_t* peer_euid) {
+-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_OPENBSD) || BUILDFLAG(IS_FREEBSD)
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd provides neither SO_PEERCRED nor getpeereid(), so the peer
++  // cannot be authenticated. Fail closed.
++  LOG(ERROR) << "Peer credentials are not available on GNU/Hurd";
++  return false;
++#elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_OPENBSD) || BUILDFLAG(IS_FREEBSD)
+   uid_t socket_euid;
+   gid_t socket_gid;
+   if (getpeereid(fd, &socket_euid, &socket_gid) < 0) {

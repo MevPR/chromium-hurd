@@ -1,0 +1,14 @@
+diff --git a/third_party/dawn/src/utils/platform.h b/third_party/dawn/src/utils/platform.h
+index 4dd58a4878..91830bd802 100644
+--- a/third_party/dawn/src/utils/platform.h
++++ b/third_party/dawn/src/utils/platform.h
+@@ -60,7 +60,8 @@
+ #error "Unsupported Windows platform."
+ #endif
+ 
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__GNU__)
++// GNU/Hurd is treated like desktop Linux (same userland, dlopen, procfs).
+ #define DAWN_PLATFORM_IS_LINUX 1
+ #define DAWN_PLATFORM_IS_POSIX 1
+ #if defined(__ANDROID__)

@@ -3,8 +3,13 @@ build.patch
 base.patch
 v8.patch
 buildtools.patch
+components.patch
+mojo.patch
+net.patch
 third_party-abseil-cpp.patch
+third_party-dawn.patch
 third_party-ffmpeg.patch
 third_party-libc++.patch
 third_party-perfetto.patch
+third_party-webrtc.patch
 ui.patch
