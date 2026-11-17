@@ -17,6 +17,7 @@ third_party-ffmpeg.patch
 third_party-fontconfig.patch
 third_party-libc++.patch
 third_party-libdrm.patch
+third_party-libsync.patch
 third_party-perfetto.patch
 third_party-webrtc.patch
 third_party-xnnpack.patch

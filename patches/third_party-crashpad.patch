@@ -89,6 +89,57 @@ index a5bfa0811f..56d987907f 100644
  #else
    const size_t kIovMax = IOV_MAX;
  #endif
+diff --git a/third_party/crashpad/crashpad/util/linux/auxiliary_vector.cc b/third_party/crashpad/crashpad/util/linux/auxiliary_vector.cc
+index 1bdaf7b6f5..44d3d48a00 100644
+--- a/third_party/crashpad/crashpad/util/linux/auxiliary_vector.cc
++++ b/third_party/crashpad/crashpad/util/linux/auxiliary_vector.cc
+@@ -14,7 +14,11 @@
+ 
+ #include "util/linux/auxiliary_vector.h"
+ 
++#if defined(__GNU__)
++#include <elf.h>  // AT_* (GNU/Hurd has no Linux kernel headers).
++#else
+ #include <linux/auxvec.h>
++#endif
+ #include <stdio.h>
+ 
+ #include "base/files/file_path.h"
+diff --git a/third_party/crashpad/crashpad/util/linux/ptrace_broker.cc b/third_party/crashpad/crashpad/util/linux/ptrace_broker.cc
+index 1680a4ed32..b4664b6c7e 100644
+--- a/third_party/crashpad/crashpad/util/linux/ptrace_broker.cc
++++ b/third_party/crashpad/crashpad/util/linux/ptrace_broker.cc
+@@ -369,7 +369,14 @@ int PtraceBroker::SendDirectory(FileHandle handle) {
+   char buffer[4096];
+   int rv;
+   do {
++#if defined(__GNU__)
++    // There is no getdents64 on GNU/Hurd (and the broker, which serves a
++    // ptrace-based handler, never runs there).
++    errno = ENOSYS;
++    rv = -1;
++#else
+     rv = syscall(SYS_getdents64, handle, buffer, sizeof(buffer));
++#endif
+ 
+     if (rv < 0) {
+       return SendReadError(static_cast<ReadError>(errno));
+diff --git a/third_party/crashpad/crashpad/util/linux/ptracer.cc b/third_party/crashpad/crashpad/util/linux/ptracer.cc
+index 83fa6824c8..30126b9873 100644
+--- a/third_party/crashpad/crashpad/util/linux/ptracer.cc
++++ b/third_party/crashpad/crashpad/util/linux/ptracer.cc
+@@ -15,7 +15,11 @@
+ #include "util/linux/ptracer.h"
+ 
+ #include <errno.h>
++#if defined(__GNU__)
++#include <elf.h>  // NT_* (GNU/Hurd has no Linux kernel headers).
++#else
+ #include <linux/elf.h>
++#endif
+ #include <string.h>
+ #include <sys/ptrace.h>
+ #include <sys/uio.h>
 diff --git a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc b/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc
 index cb184a44b5..8d0116bcd6 100644
 --- a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc

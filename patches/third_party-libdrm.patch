@@ -1,5 +1,5 @@
 diff --git a/third_party/libdrm/src/include/drm/drm.h b/third_party/libdrm/src/include/drm/drm.h
-index 1666e91b19..8a22414058 100644
+index 1666e91b19..35f1067c08 100644
 --- a/third_party/libdrm/src/include/drm/drm.h
 +++ b/third_party/libdrm/src/include/drm/drm.h
 @@ -41,6 +41,22 @@
@@ -25,3 +25,49 @@ index 1666e91b19..8a22414058 100644
  #else /* One of the BSDs */
  
  #include <stdint.h>
+@@ -1086,10 +1102,22 @@ extern "C" {
+ #endif
+ 
+ #define DRM_IOCTL_BASE			'd'
++#if defined(__GNU__)
++/* The Hurd's _IO* macros need an _IOT_<struct> description for every type.
++ * There are no DRM drivers on the Hurd, so use the Linux encoding. */
++#define __DRM_HURD_IOC(dir, nr, size) \
++	((unsigned long)(((dir) << 30) | ((size) << 16) | \
++			 (DRM_IOCTL_BASE << 8) | (nr)))
++#define DRM_IO(nr)			__DRM_HURD_IOC(0U, nr, 0U)
++#define DRM_IOR(nr,type)		__DRM_HURD_IOC(2U, nr, sizeof(type))
++#define DRM_IOW(nr,type)		__DRM_HURD_IOC(1U, nr, sizeof(type))
++#define DRM_IOWR(nr,type)		__DRM_HURD_IOC(3U, nr, sizeof(type))
++#else
+ #define DRM_IO(nr)			_IO(DRM_IOCTL_BASE,nr)
+ #define DRM_IOR(nr,type)		_IOR(DRM_IOCTL_BASE,nr,type)
+ #define DRM_IOW(nr,type)		_IOW(DRM_IOCTL_BASE,nr,type)
+ #define DRM_IOWR(nr,type)		_IOWR(DRM_IOCTL_BASE,nr,type)
++#endif
+ 
+ #define DRM_IOCTL_VERSION		DRM_IOWR(0x00, struct drm_version)
+ #define DRM_IOCTL_GET_UNIQUE		DRM_IOWR(0x01, struct drm_unique)
+diff --git a/third_party/libdrm/src/xf86drm.h b/third_party/libdrm/src/xf86drm.h
+index b45337a486..64798c6793 100644
+--- a/third_party/libdrm/src/xf86drm.h
++++ b/third_party/libdrm/src/xf86drm.h
+@@ -56,6 +56,18 @@ extern "C" {
+ #define DRM_IOC_READWRITE	_IOC_READ|_IOC_WRITE
+ #define DRM_IOC(dir, group, nr, size) _IOC(dir, group, nr, size)
+ 
++#elif defined(__GNU__)
++
++/* GNU/Hurd has no DRM drivers; use the Linux encoding (see drm.h). */
++#include <sys/ioctl.h>
++#define DRM_IOCTL_NR(n)         ((n) & 0xff)
++#define DRM_IOC_VOID            0U
++#define DRM_IOC_READ            2U
++#define DRM_IOC_WRITE           1U
++#define DRM_IOC_READWRITE       3U
++#define DRM_IOC(dir, group, nr, size) \
++	((unsigned long)(((dir) << 30) | ((size) << 16) | ((group) << 8) | (nr)))
++
+ #else /* One of the *BSDs */
+ 
+ #include <sys/ioccom.h>

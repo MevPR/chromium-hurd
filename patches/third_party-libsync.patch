@@ -1,0 +1,19 @@
+diff --git a/third_party/libsync/BUILD.gn b/third_party/libsync/BUILD.gn
+index 68a4ec903e..ed6ad31d25 100644
+--- a/third_party/libsync/BUILD.gn
++++ b/third_party/libsync/BUILD.gn
+@@ -37,6 +37,14 @@ if (!use_system_libsync) {
+       "src/sync.c",
+       "strlcpy.c",
+     ]
++    if (is_hurd) {
++      # No sync files (DMA fences) on GNU/Hurd; see sync_hurd.c.
++      sources -= [
++        "src/sync.c",
++        "strlcpy.c",
++      ]
++      sources += [ "sync_hurd.c" ]
++    }
+ 
+     configs -= [ "//build/config/compiler:chromium_code" ]
+     configs += [

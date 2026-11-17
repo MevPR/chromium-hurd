@@ -12,3 +12,17 @@ index 5f9aa0c4ed..b60550464b 100644
  
  #define HAVE_SYS_PARAM_H 1
  
+diff --git a/third_party/fontconfig/src/src/fcstat.c b/third_party/fontconfig/src/src/fcstat.c
+index 218ca683e4..f9dcaf5331 100644
+--- a/third_party/fontconfig/src/src/fcstat.c
++++ b/third_party/fontconfig/src/src/fcstat.c
+@@ -384,6 +384,9 @@ FcFStatFs (int fd, FcStatFS *statb)
+ 	    break;
+ 	}
+ 
++	return ret;
++#  elif defined(__GNU__)
++	/* GNU/Hurd: statfs carries no file system type information. */
+ 	return ret;
+ #  else
+ #    error "BUG: No way to figure out with fstatfs()"

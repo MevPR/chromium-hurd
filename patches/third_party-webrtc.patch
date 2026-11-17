@@ -1,3 +1,26 @@
+diff --git a/third_party/webrtc/rtc_base/physical_socket_server.cc b/third_party/webrtc/rtc_base/physical_socket_server.cc
+index 9d9927e85b..3bb0d4568f 100644
+--- a/third_party/webrtc/rtc_base/physical_socket_server.cc
++++ b/third_party/webrtc/rtc_base/physical_socket_server.cc
+@@ -63,7 +63,7 @@
+ #undef SetPort
+ #endif
+ 
+-#if defined(WEBRTC_LINUX)
++#if defined(WEBRTC_LINUX) && !defined(__GNU__)
+ #include <asm-generic/socket.h>
+ #include <sys/epoll.h>
+ #endif
+@@ -841,7 +841,8 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
+       *sopt = TCP_KEEPINTVL;
+       break;
+     case OPT_TCP_USER_TIMEOUT:
+-#if defined(WEBRTC_LINUX) || defined(WEBRTC_ANDROID)
++#if (defined(WEBRTC_LINUX) && defined(TCP_USER_TIMEOUT)) || \
++    defined(WEBRTC_ANDROID)
+       *slevel = IPPROTO_TCP;
+       *sopt = TCP_USER_TIMEOUT;
+       break;
 diff --git a/third_party/webrtc/rtc_base/physical_socket_server.h b/third_party/webrtc/rtc_base/physical_socket_server.h
 index 327930da4d..bb1a9aa32e 100644
 --- a/third_party/webrtc/rtc_base/physical_socket_server.h

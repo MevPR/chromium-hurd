@@ -1,3 +1,79 @@
+diff --git a/net/base/address_tracker_linux.cc b/net/base/address_tracker_linux.cc
+index de883e4552..3b7fd0570d 100644
+--- a/net/base/address_tracker_linux.cc
++++ b/net/base/address_tracker_linux.cc
+@@ -5,7 +5,18 @@
+ #include "net/base/address_tracker_linux.h"
+ 
+ #include <errno.h>
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HURD)
++#include <net/if.h>
++#ifndef IFF_LOWER_UP
++// Not reported by the Hurd; only used to interpret netlink link messages,
++// which never arrive there.
++#define IFF_LOWER_UP 0x10000
++#endif
++#else
+ #include <linux/if.h>
++#endif
+ #include <stdint.h>
+ #include <sys/ioctl.h>
+ 
+diff --git a/net/base/network_interfaces_linux.cc b/net/base/network_interfaces_linux.cc
+index d543bd080f..f2f880c346 100644
+--- a/net/base/network_interfaces_linux.cc
++++ b/net/base/network_interfaces_linux.cc
+@@ -10,11 +10,16 @@
+ #include "build/build_config.h"
+ 
+ #if !BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd has neither wireless extensions nor ethtool.
++#include <net/if.h>
++#else
+ #include <linux/ethtool.h>
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ #include <linux/if.h>
+ #include <linux/sockios.h>
+ #include <linux/wireless.h>
++#endif  // BUILDFLAG(IS_HURD)
+ #include <sys/ioctl.h>
+ #include <sys/types.h>
+ 
+@@ -86,6 +91,9 @@ namespace internal {
+ // or ethtool extensions.
+ NetworkChangeNotifier::ConnectionType GetInterfaceConnectionType(
+     std::string_view ifname) {
++#if BUILDFLAG(IS_HURD)
++  return NetworkChangeNotifier::CONNECTION_UNKNOWN;
++#else
+   base::ScopedFD s = GetSocketForIoctl();
+   if (!s.is_valid())
+     return NetworkChangeNotifier::CONNECTION_UNKNOWN;
+@@ -111,9 +119,13 @@ NetworkChangeNotifier::ConnectionType GetInterfaceConnectionType(
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+   return NetworkChangeNotifier::CONNECTION_UNKNOWN;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ std::string GetInterfaceSSID(const std::string& ifname) {
++#if BUILDFLAG(IS_HURD)
++  return std::string();
++#else
+   base::ScopedFD ioctl_socket = GetSocketForIoctl();
+   if (!ioctl_socket.is_valid())
+     return std::string();
+@@ -128,6 +140,7 @@ std::string GetInterfaceSSID(const std::string& ifname) {
+   if (ioctl(ioctl_socket.get(), SIOCGIWESSID, &wreq) != -1)
+     return std::string(SpanMaybeWithNulToStringView(ssid));
+   return std::string();
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ bool GetNetworkListImpl(
 diff --git a/net/socket/udp_socket_posix.cc b/net/socket/udp_socket_posix.cc
 index cb0728ea8d..a4dc3a584e 100644
 --- a/net/socket/udp_socket_posix.cc
