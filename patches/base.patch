@@ -1,3 +1,34 @@
+diff --git a/base/BUILD.gn b/base/BUILD.gn
+index 2587bd828b..fc5d4b5827 100644
+--- a/base/BUILD.gn
++++ b/base/BUILD.gn
+@@ -1120,7 +1120,10 @@ component("base") {
+     ]
+   }
+ 
+-  if (is_linux || is_chromeos || is_android) {
++  if (is_hurd) {
++    # There is no inotify (or other file change notification API) on the Hurd.
++    sources += [ "files/file_path_watcher_stub.cc" ]
++  } else if (is_linux || is_chromeos || is_android) {
+     sources += [
+       "files/file_path_watcher_inotify.cc",
+       "files/file_path_watcher_inotify.h",
+diff --git a/base/allocator/partition_allocator/partition_alloc.gni b/base/allocator/partition_allocator/partition_alloc.gni
+index fdf65be88f..30bf8082f4 100644
+--- a/base/allocator/partition_allocator/partition_alloc.gni
++++ b/base/allocator/partition_allocator/partition_alloc.gni
+@@ -545,8 +545,8 @@ assert(!use_asan_backup_ref_ptr || use_raw_ptr_hookable_impl,
+ # pkeys support is explicitly disabled in all Cronet builds, as some test
+ # dependencies that use partition_allocator are compiled in AOSP against a
+ # version of glibc that does not include pkeys syscall numbers.
+-is_pkeys_available =
+-    (is_linux || is_chromeos) && current_cpu == "x64" && !is_cronet_build
++is_pkeys_available = (is_linux || is_chromeos) && !is_hurd &&
++                     current_cpu == "x64" && !is_cronet_build
+ 
+ declare_args() {
+   enable_pkeys = is_pkeys_available
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/build_config.h b/base/allocator/partition_allocator/src/partition_alloc/build_config.h
 index a124902743..22fc848c72 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/build_config.h
@@ -29,6 +60,323 @@ index a124902743..22fc848c72 100644
  #if defined(PA_IS_LINUX)
  #define PA_BUILDFLAG_INTERNAL_IS_LINUX() (1)
  #else
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/linux_name_region.h b/base/allocator/partition_allocator/src/partition_alloc/linux_name_region.h
+index 7824c66ab7..77a776f9af 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/linux_name_region.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/linux_name_region.h
+@@ -9,8 +9,9 @@
+ 
+ // Ability to name anonymous VMAs is available on some, but not all Linux-based
+ // systems.
+-#if PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX) || \
+-    PA_BUILDFLAG(IS_CHROMEOS)
++#if (PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX) || \
++     PA_BUILDFLAG(IS_CHROMEOS)) &&                           \
++    !PA_BUILDFLAG(IS_HURD)
+ #include <sys/prctl.h>
+ 
+ #if (PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)) && \
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
+index a3874e5b41..35b0413456 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
+@@ -12,6 +12,10 @@
+ #include "partition_alloc/partition_alloc_base/check.h"
+ #include "partition_alloc/partition_alloc_base/compiler_specific.h"
+ 
++#if PA_BUILDFLAG(IS_HURD)
++#include <sys/random.h>
++#endif
++
+ #if PA_BUILDFLAG(IS_MAC)
+ #include <sys/random.h>
+ #elif PA_BUILDFLAG(IS_APPLE)
+@@ -91,7 +95,14 @@ PA_UNSAFE_BUFFER_USAGE void RandBytes(void* output, size_t output_length) {
+ #elif PA_BUILDFLAG(IS_APPLE)
+   PA_BASE_CHECK(CCRandomGenerateBytes(output, output_length) == kCCSuccess);
+ #else
+-#if PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
++#if PA_BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no syscall(); glibc implements getrandom() on top of the
++  // random translator.
++  const ssize_t r = WrapEINTR(getrandom)(output, output_length, 0);
++  if (output_length == static_cast<size_t>(r)) {
++    return;
++  }
++#elif PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
+   // Use `syscall(__NR_getrandom...` to avoid a dependency on
+   // `third_party/linux_syscall_support.h`.
+   //
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
+index ff4bf714e4..bb6a2d00b8 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
+@@ -35,6 +35,10 @@ PlatformThreadId PlatformThread::CurrentId() {
+   // into the kernel.
+ #if PA_BUILDFLAG(IS_APPLE)
+   return pthread_mach_thread_np(pthread_self());
++#elif PA_BUILDFLAG(IS_HURD)
++  // There are no kernel thread ids on GNU/Hurd. libpthread's thread handles
++  // are small integers that are unique within the process.
++  return static_cast<PlatformThreadId>(pthread_self());
+ #elif PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
+   // Unlike base/threading/platform_thread_posix.cc, we avoid using thread_local
+   // for thread_id caching. This prevents reentrancy issues within
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_config.h b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_config.h
+index 58b66e834a..2bc248f314 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_config.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_config.h
+@@ -50,9 +50,10 @@ static_assert(sizeof(void*) != 8, "");
+ 
+ // POSIX is not only UNIX, e.g. macOS and other OSes. We do use Linux-specific
+ // features such as futex(2).
+-#define PA_CONFIG_HAS_LINUX_KERNEL()                      \
+-  (PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS) || \
+-   PA_BUILDFLAG(IS_ANDROID))
++// GNU/Hurd is built as a flavour of Linux but has a different kernel.
++#define PA_CONFIG_HAS_LINUX_KERNEL()                       \
++  ((PA_BUILDFLAG(IS_LINUX) && !PA_BUILDFLAG(IS_HURD)) ||   \
++   PA_BUILDFLAG(IS_CHROMEOS) || PA_BUILDFLAG(IS_ANDROID))
+ 
+ // Need TLS support.
+ #define PA_CONFIG_THREAD_CACHE_SUPPORTED() \
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
+index 0093fad69b..24723a9ce4 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
+@@ -71,7 +71,9 @@ constexpr inline size_t kThreadCacheStorageSize =
+     ((PA_BUILDFLAG(DCHECKS_ARE_ON) ||
+       PA_BUILDFLAG(ENABLE_PARTITION_LOCK_REENTRANCY_CHECK))
+          ? 8
+-         : 0);
++         : 0) +
++    // Without futex(2) the thread cache's lock is larger on GNU/Hurd.
++    (PA_BUILDFLAG(IS_HURD) ? 32 : 0);
+ #else
+ constexpr inline size_t kThreadCacheStorageSize =
+     960 + (PA_CONFIG(THREAD_CACHE_ALLOC_STATS) ? 960 : 0);
+diff --git a/base/debug/stack_trace_posix.cc b/base/debug/stack_trace_posix.cc
+index d4b6111077..fb001e9b09 100644
+--- a/base/debug/stack_trace_posix.cc
++++ b/base/debug/stack_trace_posix.cc
+@@ -324,7 +324,8 @@ void PrintToStderr(const char* output) {
+   std::ignore = HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output)));
+ }
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_ANDROID) || \
++    BUILDFLAG(IS_CHROMEOS)
+ void AlarmSignalHandler(int signal, siginfo_t* info, void* void_context) {
+   // We have seen rare cases on AMD linux where the default signal handler
+   // either does not run or a thread (Probably an AMD driver thread) prevents
+@@ -445,7 +446,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+       PrintToStderr(" SEGV_ACCERR ");
+     }
+ #if defined(ARCH_CPU_X86_64) && \
+-    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS))
++    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)) && \
++    !BUILDFLAG(IS_HURD)
+     else if (info->si_code == SI_KERNEL) {
+       PrintToStderr(" SI_KERNEL");
+     }
+@@ -472,7 +474,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+ #endif  // BUILDFLAG(CFI_ENFORCEMENT_TRAP)
+ 
+ #if defined(ARCH_CPU_X86_64) && \
+-    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS))
++    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)) && \
++    !BUILDFLAG(IS_HURD)
+   if (signal == SIGSEGV && info->si_code == SI_KERNEL) {
+     PrintToStderr(
+         " Possibly a General Protection Fault, can be due to a non-canonical "
+@@ -483,7 +486,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+ 
+   debug::StackTrace().Print();
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ #if ARCH_CPU_X86_FAMILY
+   ucontext_t* context = reinterpret_cast<ucontext_t*>(void_context);
+   auto gregs = base::span(context->uc_mcontext.gregs);
+@@ -545,7 +548,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+     _exit(EXIT_FAILURE);
+   }
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_ANDROID) || \
++    BUILDFLAG(IS_CHROMEOS)
+   // Set an alarm to trigger in case the default handler does not terminate
+   // the process. See 'AlarmSignalHandler' for more details.
+   struct sigaction action;
+diff --git a/base/files/dir_reader_posix.h b/base/files/dir_reader_posix.h
+index 7fbda52ab4..c1d637f951 100644
+--- a/base/files/dir_reader_posix.h
++++ b/base/files/dir_reader_posix.h
+@@ -16,8 +16,11 @@
+ // wrapped and the direct syscall interface is unstable. Using an unstable API
+ // seems worse than falling back to enumerating all file descriptors so we will
+ // probably never implement this on the Mac.
++//
++// GNU/Hurd has no getdents64 system call either.
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ #include "base/files/dir_reader_linux.h"
+ #else
+ #include "base/files/dir_reader_fallback.h"
+@@ -25,7 +28,8 @@
+ 
+ namespace base {
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ typedef DirReaderLinux DirReaderPosix;
+ #else
+ typedef DirReaderFallback DirReaderPosix;
+diff --git a/base/files/drive_info_posix.cc b/base/files/drive_info_posix.cc
+index 486f8f93b2..a56fa80b60 100644
+--- a/base/files/drive_info_posix.cc
++++ b/base/files/drive_info_posix.cc
+@@ -17,7 +17,7 @@
+ #include "base/strings/stringprintf.h"
+ #include "build/build_config.h"
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ #include <linux/kdev_t.h>
+ #include <linux/magic.h>
+ #include <sys/vfs.h>
+@@ -27,7 +27,8 @@ namespace base {
+ 
+ std::optional<DriveInfo> GetFileDriveInfo(const FilePath& file_path) {
+   DriveInfo drive_info;
+-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
++// GNU/Hurd has no /sys/dev/block to query.
++#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_HURD)
+   drive_info.has_seek_penalty = false;
+   return drive_info;
+ #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/files/file_path_watcher_stub.cc b/base/files/file_path_watcher_stub.cc
+index a29f53cdc3..60ecd33809 100644
+--- a/base/files/file_path_watcher_stub.cc
++++ b/base/files/file_path_watcher_stub.cc
+@@ -13,6 +13,7 @@
+ #include "base/check.h"
+ #include "base/notimplemented.h"
+ #include "base/task/sequenced_task_runner.h"
++#include "build/build_config.h"
+ 
+ namespace base {
+ 
+@@ -42,4 +43,11 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
+ FilePathWatcher::FilePathWatcher()
+     : FilePathWatcher(std::make_unique<FilePathWatcherImpl>()) {}
+ 
++#if BUILDFLAG(IS_LINUX)
++// static
++bool FilePathWatcher::HasWatchesForTest() {
++  return false;
++}
++#endif  // BUILDFLAG(IS_LINUX)
++
+ }  // namespace base
+diff --git a/base/files/file_posix.cc b/base/files/file_posix.cc
+index c0097f4b6e..c89151c858 100644
+--- a/base/files/file_posix.cc
++++ b/base/files/file_posix.cc
+@@ -615,7 +615,15 @@ void File::DoInitialize(const FilePath& path, uint32_t flags) {
+     open_flags |= O_NOFOLLOW;
+   }
+ 
++#if BUILDFLAG(IS_HURD)
++  // On GNU/Hurd O_RDONLY is a bit of its own (O_READ, and O_RDWR is
++  // O_READ | O_WRITE), so read-only access has to be requested explicitly.
++  if (!(open_flags & (O_WRONLY | O_RDWR))) {
++    open_flags |= O_RDONLY;
++  }
++#else
+   static_assert(O_RDONLY == 0, "O_RDONLY must equal zero");
++#endif
+ 
+   mode_t mode = S_IRUSR | S_IWUSR;
+ #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/files/file_util_posix.cc b/base/files/file_util_posix.cc
+index 538fdbc604..caedbe7fb4 100644
+--- a/base/files/file_util_posix.cc
++++ b/base/files/file_util_posix.cc
+@@ -1512,7 +1512,7 @@ bool AllocateFileRegion(File* file, int64_t offset, size_t size) {
+   // space. It can fail because the filesystem doesn't support it. In that case,
+   // use the manual method below.
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   if (HANDLE_EINTR(fallocate(file->GetPlatformFile(), 0, offset,
+                              static_cast<off_t>(size))) != -1) {
+     return true;
+diff --git a/base/linux_util.cc b/base/linux_util.cc
+index a6b4fce5d4..72b0cb563a 100644
+--- a/base/linux_util.cc
++++ b/base/linux_util.cc
+@@ -15,6 +15,7 @@
+ 
+ #include <iomanip>
+ #include <memory>
++#include <sstream>
+ #include <string_view>
+ 
+ #include "base/base_export.h"
+@@ -22,6 +23,7 @@
+ #include "base/files/dir_reader_posix.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_file.h"
++#include "base/logging.h"
+ #include "base/strings/safe_sprintf.h"
+ #include "base/strings/span_printf.h"
+ #include "base/strings/string_number_conversions.h"
+diff --git a/base/memory/discardable_shared_memory.cc b/base/memory/discardable_shared_memory.cc
+index b44515c9ba..b65a9ec6c1 100644
+--- a/base/memory/discardable_shared_memory.cc
++++ b/base/memory/discardable_shared_memory.cc
+@@ -415,8 +415,12 @@ bool DiscardableSharedMemory::Purge(Time current_time) {
+ // Linux and Android provide MADV_REMOVE which is preferred as it has a
+ // behavior that can be verified in tests. Other POSIX flavors (MacOSX, BSDs),
+ // provide MADV_FREE which has the same result but memory is purged lazily.
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID)
+ #define MADV_PURGE_ARGUMENT MADV_REMOVE
++#elif BUILDFLAG(IS_HURD)
++// GNU/Hurd only offers MADV_DONTNEED.
++#define MADV_PURGE_ARGUMENT MADV_DONTNEED
+ #elif BUILDFLAG(IS_APPLE)
+   // MADV_FREE_REUSABLE is similar to MADV_FREE, but also marks the pages with
+   // the reusable bit, which allows both Activity Monitor and memory-infra to
+diff --git a/base/memory/platform_shared_memory_region_posix.cc b/base/memory/platform_shared_memory_region_posix.cc
+index d878fd30ef..f64956093f 100644
+--- a/base/memory/platform_shared_memory_region_posix.cc
++++ b/base/memory/platform_shared_memory_region_posix.cc
+@@ -87,6 +87,11 @@ std::optional<FDAccessModeError> CheckFDAccessMode(int fd, int expected_mode) {
+ // the file-based implementation.
+ ScopedFDPair CreateAnonymousRegion(PlatformSharedMemoryRegion::Mode mode,
+                                    size_t size) {
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd has neither memfd_create() nor file seals; use the file-based
++  // implementation.
++  return {};
++#else
+   // MFD_NOEXEC_SEAL creates the file non-executable and seals that state.
+   // Kernels older than 6.3 reject the flag with EINVAL; remember that.
+   // The raw system call is used (as in mojo/core/channel_linux.cc) so that
+@@ -145,6 +150,7 @@ ScopedFDPair CreateAnonymousRegion(PlatformSharedMemoryRegion::Mode mode,
+   }
+ 
+   return ScopedFDPair(std::move(fd), std::move(readonly_fd));
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 diff --git a/base/message_loop/message_pump_epoll.cc b/base/message_loop/message_pump_epoll.cc
 index 91449482c8..76b2cb7c73 100644
 --- a/base/message_loop/message_pump_epoll.cc
@@ -160,3 +508,426 @@ index af6940162f..a91ff40452 100644
  
    // Tracks when we should next record periodic metrics.
    base::TimeTicks next_metrics_time_;
+diff --git a/base/posix/can_lower_nice_to.cc b/base/posix/can_lower_nice_to.cc
+index d9117138b4..5edfba9905 100644
+--- a/base/posix/can_lower_nice_to.cc
++++ b/base/posix/can_lower_nice_to.cc
+@@ -46,6 +46,10 @@ bool CanLowerNiceTo(int nice_value) {
+   // lower niceness anywhere within the [-10, 19] range (20 - 30 = -10).
+   //
+   // So, we are allowed to reduce niceness to a minimum of NZERO - rlimit:
++#if !defined(RLIMIT_NICE)
++  // E.g. GNU/Hurd: there is no such limit, so only root can lower niceness.
++  return false;
++#else
+   struct rlimit rlim;
+   if (getrlimit(RLIMIT_NICE, &rlim) != 0) {
+     return false;
+@@ -55,6 +59,7 @@ bool CanLowerNiceTo(int nice_value) {
+   // And lowering niceness to |nice_value| is allowed if it is greater than or
+   // equal to the limit:
+   return nice_value >= lowest_nice_allowed;
++#endif  // !defined(RLIMIT_NICE)
+ }
+ 
+ }  // namespace base::internal
+diff --git a/base/posix/unix_domain_socket.cc b/base/posix/unix_domain_socket.cc
+index 0490c59403..6808a8fb12 100644
+--- a/base/posix/unix_domain_socket.cc
++++ b/base/posix/unix_domain_socket.cc
+@@ -33,7 +33,15 @@ bool CreateSocketPair(ScopedFD* one, ScopedFD* two) {
+   const int flags = SOCK_SEQPACKET;
+ #endif
+   if (socketpair(AF_UNIX, flags, 0, raw_socks) == -1) {
++#if BUILDFLAG(IS_HURD)
++    // Not every GNU/Hurd pflocal supports SOCK_SEQPACKET. Local datagram
++    // sockets are reliable and also preserve message boundaries.
++    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, raw_socks) == -1) {
++      return false;
++    }
++#else
+     return false;
++#endif
+   }
+   one->reset(raw_socks[0]);
+   two->reset(raw_socks[1]);
+@@ -42,11 +50,11 @@ bool CreateSocketPair(ScopedFD* one, ScopedFD* two) {
+ 
+ // static
+ bool UnixDomainSocket::EnableReceiveProcessId(int fd) {
+-#if !BUILDFLAG(IS_APPLE)
++#if !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_HURD)
+   const int enable = 1;
+   return setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &enable, sizeof(enable)) == 0;
+ #else
+-  // SO_PASSCRED is not supported on macOS.
++  // SO_PASSCRED is not supported on macOS and GNU/Hurd.
+   return true;
+ #endif  // BUILDFLAG(IS_APPLE)
+ }
+@@ -126,8 +134,8 @@ ssize_t UnixDomainSocket::RecvMsgWithFlags(int fd,
+ 
+   const size_t kControlBufferSize =
+       CMSG_SPACE(sizeof(int) * kMaxFileDescriptors)
+-#if !BUILDFLAG(IS_APPLE)
+-      // macOS does not support ucred.
++#if !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_HURD)
++      // macOS and GNU/Hurd do not support ucred.
+       // macOS supports xucred, but this structure is insufficient.
+       + CMSG_SPACE(sizeof(struct ucred))
+ #endif  // !BUILDFLAG(IS_APPLE)
+@@ -156,8 +164,8 @@ ssize_t UnixDomainSocket::RecvMsgWithFlags(int fd,
+         wire_fds = reinterpret_cast<int*>(UNSAFE_TODO(CMSG_DATA(cmsg)));
+         wire_fds_len = payload_len / sizeof(int);
+       }
+-#if !BUILDFLAG(IS_APPLE)
+-      // macOS does not support SCM_CREDENTIALS.
++#if !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_HURD)
++      // macOS and GNU/Hurd do not support SCM_CREDENTIALS.
+       if (cmsg->cmsg_level == SOL_SOCKET &&
+           cmsg->cmsg_type == SCM_CREDENTIALS) {
+         DCHECK_EQ(payload_len, sizeof(struct ucred));
+@@ -194,6 +202,9 @@ ssize_t UnixDomainSocket::RecvMsgWithFlags(int fd,
+     if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size) != 0) {
+       pid = -1;
+     }
++#elif BUILDFLAG(IS_HURD)
++    // The peer's process id is not available on GNU/Hurd.
++    pid = -1;
+ #else
+     // |pid| will legitimately be -1 if we read EOF, so only DCHECK if we
+     // actually received a message.  Unfortunately, Linux allows sending zero
+diff --git a/base/process/launch.h b/base/process/launch.h
+index b282410b47..73abada4f9 100644
+--- a/base/process/launch.h
++++ b/base/process/launch.h
+@@ -56,7 +56,10 @@ enum TerminationStatus : int;
+ // defined as a constant.
+ 
+ // These constants are borrowed from glibc's (arch)/bits/pthread_stack_min.h.
+-#if defined(ARCH_CPU_ARM64) || defined(ARCH_CPU_LOONGARCH64)
++#if !defined(PTHREAD_STACK_MIN)
++// GNU/Hurd does not define PTHREAD_STACK_MIN at all.
++#define PTHREAD_STACK_MIN_CONST 16384
++#elif defined(ARCH_CPU_ARM64) || defined(ARCH_CPU_LOONGARCH64)
+ #define PTHREAD_STACK_MIN_CONST \
+   (__builtin_constant_p(PTHREAD_STACK_MIN) ? PTHREAD_STACK_MIN : 131072)
+ #else
+diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
+index 99427d5301..3a7c4b577b 100644
+--- a/base/process/launch_posix.cc
++++ b/base/process/launch_posix.cc
+@@ -73,12 +73,14 @@ namespace base {
+ // In some implementations of libc, PTHREAD_STACK_MIN is already
+ // constant in which case we don't need to bother checking
+ void CheckPThreadStackMinIsSafe() {
++#if defined(PTHREAD_STACK_MIN)
+   if constexpr (!__builtin_constant_p(PTHREAD_STACK_MIN)) {
+     [[maybe_unused]] static const bool dummy = [] {
+       CHECK_GE(PTHREAD_STACK_MIN_CONST, PTHREAD_STACK_MIN);
+       return false;
+     }();
+   }
++#endif  // defined(PTHREAD_STACK_MIN)
+ }
+ 
+ namespace {
+@@ -100,7 +102,8 @@ sigset_t SetSignalMask(const sigset_t& new_sigmask) {
+ }
+ 
+ #if (!BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_AIX) && !BUILDFLAG(IS_CHROMEOS)) || \
+-    (!defined(__i386__) && !defined(__x86_64__) && !defined(__arm__))
++    (!defined(__i386__) && !defined(__x86_64__) && !defined(__arm__)) ||    \
++    BUILDFLAG(IS_HURD)
+ void ResetChildSignalHandlersToDefaults() {
+   // The previous signal handlers are likely to be meaningless in the child's
+   // context so we reset them to the defaults for now. http://crbug.com/44953
+@@ -330,7 +333,10 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+   }
+ 
+   pid_t pid;
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
++#if BUILDFLAG(IS_HURD)
++  // There is no clone() on GNU/Hurd.
++  RAW_CHECK(!options.clone_flags);
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
+   if (options.clone_flags) {
+     // Signal handling in this function assumes the creation of a new
+     // process, so we check that a thread is not being created by mistake
+@@ -732,7 +738,16 @@ bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
+   return GetAppOutputInternal(argv, nullptr, false, output, true, exit_code);
+ }
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
++#if BUILDFLAG(IS_HURD)
++pid_t ForkWithFlags(int flags, pid_t* ptid, pid_t* ctid) {
++  // GNU/Hurd has no clone(). Only the flags-free fork() case (with the default
++  // termination signal) can be supported.
++  if ((flags & ~0xff) != 0 || (flags & 0xff) != SIGCHLD || ptid || ctid) {
++    RAW_LOG(FATAL, "ForkWithFlags: clone flags are not supported on GNU/Hurd");
++  }
++  return fork();
++}
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_AIX)
+ namespace {
+ 
+ // This function runs on the stack specified on the clone call. It uses longjmp
+diff --git a/base/process/process_linux.cc b/base/process/process_linux.cc
+index 2618b503db..b001ff439b 100644
+--- a/base/process/process_linux.cc
++++ b/base/process/process_linux.cc
+@@ -5,7 +5,11 @@
+ #include "base/process/process.h"
+ 
+ #include <errno.h>
++#include "build/build_config.h"
++
++#if !BUILDFLAG(IS_HURD)
+ #include <linux/magic.h>
++#endif
+ #include <sys/resource.h>
+ #include <sys/vfs.h>
+ 
+@@ -69,11 +73,16 @@ const char kBackgroundExperiment[] = "/chrome_renderers_background";
+ const char kProcPath[] = "/proc/%d/cgroup";
+ 
+ bool PathIsCGroupFileSystem(const FilePath& path) {
++#if BUILDFLAG(IS_HURD)
++  // There are no cgroups on GNU/Hurd.
++  return false;
++#else
+   struct statfs statfs_buf;
+   if (statfs(path.value().c_str(), &statfs_buf) < 0) {
+     return false;
+   }
+   return statfs_buf.f_type == CGROUP_SUPER_MAGIC;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ struct CGroups {
+diff --git a/base/profiler/stack_copier_signal.cc b/base/profiler/stack_copier_signal.cc
+index 62ab1c02f7..7bde4f7271 100644
+--- a/base/profiler/stack_copier_signal.cc
++++ b/base/profiler/stack_copier_signal.cc
+@@ -5,11 +5,19 @@
+ #include "base/profiler/stack_copier_signal.h"
+ 
+ #include <errno.h>
+-#include <linux/futex.h>
+ #include <signal.h>
+ #include <stdint.h>
+ #include <sys/ucontext.h>
++
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HURD)
++#include <pthread.h>
++#include <semaphore.h>
++#else
++#include <linux/futex.h>
+ #include <syscall.h>
++#endif
+ 
+ #include <atomic>
+ #include <cstring>
+@@ -32,6 +40,31 @@ namespace base {
+ 
+ namespace {
+ 
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd has no futex(2). POSIX semaphores provide the same guarantees:
++// sem_post() is async-signal-safe.
++class AsyncSafeWaitableEvent {
++ public:
++  AsyncSafeWaitableEvent() { sem_init(&sem_, /*pshared=*/0, /*value=*/0); }
++  ~AsyncSafeWaitableEvent() { sem_destroy(&sem_); }
++  AsyncSafeWaitableEvent(const AsyncSafeWaitableEvent&) = delete;
++  AsyncSafeWaitableEvent& operator=(const AsyncSafeWaitableEvent&) = delete;
++
++  bool Wait() {
++    while (sem_wait(&sem_) != 0) {
++      if (errno != EINTR) {
++        return false;
++      }
++    }
++    return true;
++  }
++
++  void Signal() { sem_post(&sem_); }
++
++ private:
++  sem_t sem_;
++};
++#else
+ // Waitable event implementation with futex and without DCHECK(s), since signal
+ // handlers cannot allocate memory or use pthread api.
+ class AsyncSafeWaitableEvent {
+@@ -94,6 +127,7 @@ class AsyncSafeWaitableEvent {
+ 
+   std::atomic_uint32_t futex_{kNotSignaled};
+ };
++#endif  // BUILDFLAG(IS_HURD)
+ 
+ // Scoped signal event that calls Signal on the AsyncSafeWaitableEvent at
+ // destructor.
+@@ -262,10 +296,19 @@ bool StackCopierSignal::CopyStack(StackBuffer* stack_buffer,
+       return false;
+     }
+ 
++#if BUILDFLAG(IS_HURD)
++    // On GNU/Hurd, PlatformThreadId is the thread's pthread_t.
++    if (pthread_kill(
++            static_cast<pthread_t>(thread_delegate_->GetThreadId().raw()),
++            SIGURG) != 0) {
++      NOTREACHED();
++    }
++#else
+     if (syscall(SYS_tgkill, getpid(), thread_delegate_->GetThreadId(),
+                 SIGURG) != 0) {
+       NOTREACHED();
+     }
++#endif
+     bool finished_waiting = wait_event.Wait();
+     TRACE_EVENT_END(TRACE_DISABLED_BY_DEFAULT("cpu_profiler.debug"));
+     CHECK(finished_waiting);
+diff --git a/base/rand_util_posix.cc b/base/rand_util_posix.cc
+index 6560a29287..35d9fe7492 100644
+--- a/base/rand_util_posix.cc
++++ b/base/rand_util_posix.cc
+@@ -31,7 +31,9 @@
+ #include "base/system/sys_info.h"
+ #endif  // BUILDFLAG(IS_MAC)
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_HURD)
++#include <sys/random.h>
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include "third_party/lss/linux_syscall_support.h"
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ 
+@@ -71,16 +73,26 @@ class URandomFd {
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+ 
+ bool KernelSupportsGetRandom() {
++#if BUILDFLAG(IS_HURD)
++  // glibc provides getrandom() on top of the random translator.
++  return true;
++#else
+   return base::SysInfo::KernelVersionNumber::Current() >=
+          base::SysInfo::KernelVersionNumber(3, 17);
++#endif
+ }
+ 
+ bool GetRandomSyscall(void* output, size_t output_length) {
+   // We have to call `getrandom` via Linux Syscall Support, rather than through
+   // the libc wrapper, because we might not have an up-to-date libc (e.g. on
+   // some bots).
++#if BUILDFLAG(IS_HURD)
++  // There is no syscall() on GNU/Hurd; use the libc function.
++  const ssize_t r = HANDLE_EINTR(getrandom(output, output_length, 0));
++#else
+   const ssize_t r =
+       HANDLE_EINTR(syscall(__NR_getrandom, output, output_length, 0));
++#endif
+ 
+   // Return success only on total success. In case errno == ENOSYS (or any other
+   // error), we'll fall through to reading from urandom below.
+diff --git a/base/system/sys_info_posix.cc b/base/system/sys_info_posix.cc
+index 5460a7f35e..3d3bd67a91 100644
+--- a/base/system/sys_info_posix.cc
++++ b/base/system/sys_info_posix.cc
+@@ -43,7 +43,9 @@
+ #endif
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if !BUILDFLAG(IS_HURD)
+ #include <linux/magic.h>
++#endif
+ #include <sys/vfs.h>
+ #endif
+ 
+@@ -78,6 +80,10 @@ bool IsStatsZeroIfUnlimited(const base::FilePath& path) {
+   // (following the statfs(2) man page) use unsigned int instead. To avoid
+   // either an unsigned -> signed cast, or a narrowing cast, we always upcast
+   // statfs::f_type to unsigned long. :(
++#if BUILDFLAG(IS_HURD)
++  // The Hurd's tmpfs translator reports its real size limit.
++  return false;
++#else
+   switch (static_cast<unsigned long>(stats.f_type)) {
+     case TMPFS_MAGIC:
+     case HUGETLBFS_MAGIC:
+@@ -85,6 +91,7 @@ bool IsStatsZeroIfUnlimited(const base::FilePath& path) {
+       return true;
+   }
+   return false;
++#endif
+ }
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ 
+diff --git a/base/threading/platform_thread_linux.cc b/base/threading/platform_thread_linux.cc
+index b0dab76f9e..5a96e37c28 100644
+--- a/base/threading/platform_thread_linux.cc
++++ b/base/threading/platform_thread_linux.cc
+@@ -105,8 +105,13 @@ bool CanSetThreadTypeToRealtimeAudio() {
+ 
+   // A non-zero soft-limit on RLIMIT_RTPRIO is required to be allowed to invoke
+   // pthread_setschedparam in SetCurrentThreadTypeForPlatform().
++#if defined(RLIMIT_RTPRIO)
+   struct rlimit rlim;
+   return getrlimit(RLIMIT_RTPRIO, &rlim) != 0 && rlim.rlim_cur != 0;
++#else
++  // E.g. GNU/Hurd, which has no real-time scheduling for unprivileged users.
++  return false;
++#endif
+ }
+ 
+ void SetCurrentThreadTypeImpl(ThreadType thread_type,
+diff --git a/base/threading/platform_thread_posix.cc b/base/threading/platform_thread_posix.cc
+index 2c34251a84..a05344c9da 100644
+--- a/base/threading/platform_thread_posix.cc
++++ b/base/threading/platform_thread_posix.cc
+@@ -223,6 +223,10 @@ PlatformThreadId PlatformThreadBase::CurrentId() {
+   uint64_t tid;
+   CHECK_EQ(pthread_threadid_np(nullptr, &tid), 0);
+   return PlatformThreadId(tid);
++#elif BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no kernel thread ids (and no gettid()). libpthread's thread
++  // handles are small integers that are unique within the process.
++  return PlatformThreadId(static_cast<pid_t>(pthread_self()));
+ #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+   // Workaround false-positive MSAN use-of-uninitialized-value on
+   // thread_local storage for loaded libraries:
+diff --git a/base/time/time_now_posix.cc b/base/time/time_now_posix.cc
+index 70252d7230..968644c5ec 100644
+--- a/base/time/time_now_posix.cc
++++ b/base/time/time_now_posix.cc
+@@ -147,7 +147,13 @@ namespace subtle {
+ // ChromeOS, and Android). Apple platforms use an alternate implementation in
+ // time_apple.mm.
+ time_internal::RealTicks RealTicksNowIgnoringOverride() {
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd has no CLOCK_BOOTTIME. It does not suspend either, so
++  // CLOCK_MONOTONIC counts the same time.
++  return time_internal::RealTicks() + Microseconds(ClockNow(CLOCK_MONOTONIC));
++#else
+   return time_internal::RealTicks() + Microseconds(ClockNow(CLOCK_BOOTTIME));
++#endif
+ }
+ }  // namespace subtle
+ 
+diff --git a/base/tracing/trace_time.cc b/base/tracing/trace_time.cc
+index 86221ee3bb..4b2a081d0a 100644
+--- a/base/tracing/trace_time.cc
++++ b/base/tracing/trace_time.cc
+@@ -12,8 +12,8 @@ namespace base::tracing {
+ 
+ int64_t TraceBootTicksNow() {
+   // On Windows and Mac, TRACE_TIME_TICKS_NOW() behaves like boottime already.
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
+-    BUILDFLAG(IS_FUCHSIA)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
++    BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
+   struct timespec ts;
+   int res = clock_gettime(CLOCK_BOOTTIME, &ts);
+   if (res != -1) {

@@ -81,6 +81,31 @@ index 1e5dc57538..713a0818c6 100644
      (is_android &&
       filter_include(android_supported_cpus, [ current_cpu ]) != []) ||
      is_apple || is_fuchsia || is_chromeos ||
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index c106acfca9..5aca136a4b 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -560,6 +560,20 @@ config("compiler") {
+     # error.  "-lpthread" is added in //build/config:default_libs.
+   }
+ 
++  # GNU/Hurd-specific compiler flags setup.
++  # ---------------------------------------
++  if (is_hurd) {
++    # The Hurd deliberately has no fixed path length limit. Chromium (and many
++    # third-party libraries) size buffers with it, so use the Linux value.
++    defines += [ "PATH_MAX=4096" ]
++
++    # Replacements for a few Linux-only headers, see the README there.
++    cflags += [
++      "-isystem",
++      rebase_path("//build/config/hurd/compat", root_build_dir),
++    ]
++  }
++
+   # ChromeOS-specific compiler flags setup.
+   # ---------------------------------------
+   if (is_chromeos) {
 diff --git a/build/config/compiler_cpu_abi.gn b/build/config/compiler_cpu_abi.gn
 index ae62bab587..bbc92d1a33 100644
 --- a/build/config/compiler_cpu_abi.gn

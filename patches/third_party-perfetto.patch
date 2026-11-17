@@ -26,3 +26,106 @@ index 0c519a313b..2efed50d4b 100644
  #elif defined(__QNXNTO__)
  #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_ANDROID() 0
  #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_LINUX() 1
+diff --git a/third_party/perfetto/include/perfetto/base/thread_utils.h b/third_party/perfetto/include/perfetto/base/thread_utils.h
+index 0cc0803ff3..9385c0df0c 100644
+--- a/third_party/perfetto/include/perfetto/base/thread_utils.h
++++ b/third_party/perfetto/include/perfetto/base/thread_utils.h
+@@ -32,6 +32,9 @@ __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
+ #include <sys/types.h>
+ #include <unistd.h>
++#elif defined(__GNU__)
++#include <pthread.h>
++#include <sys/types.h>
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+ #include <sys/syscall.h>
+@@ -53,6 +56,13 @@ using PlatformThreadId = pid_t;
+ inline PlatformThreadId GetThreadId() {
+   return gettid();
+ }
++#elif defined(__GNU__)
++// GNU/Hurd has no kernel thread ids; libpthread's thread handles are small
++// integers that are unique within the process.
++using PlatformThreadId = pid_t;
++inline PlatformThreadId GetThreadId() {
++  return static_cast<pid_t>(pthread_self());
++}
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX)
+ using PlatformThreadId = pid_t;
+ inline PlatformThreadId GetThreadId() {
+diff --git a/third_party/perfetto/include/perfetto/base/time.h b/third_party/perfetto/include/perfetto/base/time.h
+index f7057d8c47..acff9651d6 100644
+--- a/third_party/perfetto/include/perfetto/base/time.h
++++ b/third_party/perfetto/include/perfetto/base/time.h
+@@ -281,6 +281,7 @@ inline TimeNanos GetTimeInternalNs(clockid_t clk_id) {
+ // Return ns from boot. Conversely to GetWallTimeNs, this clock counts also time
+ // during suspend (when supported).
+ inline TimeNanos GetBootTimeNs() {
++#if defined(CLOCK_BOOTTIME)
+   // Determine if CLOCK_BOOTTIME is available on the first call.
+   static const clockid_t kBootTimeClockSource = [] {
+     struct timespec ts = {};
+@@ -288,6 +289,10 @@ inline TimeNanos GetBootTimeNs() {
+     return res == 0 ? CLOCK_BOOTTIME : kWallTimeClockSource;
+   }();
+   return GetTimeInternalNs(kBootTimeClockSource);
++#else
++  // E.g. GNU/Hurd, which does not suspend: the monotonic clock is equivalent.
++  return GetTimeInternalNs(kWallTimeClockSource);
++#endif
+ }
+ 
+ inline TimeNanos GetWallTimeNs() {
+diff --git a/third_party/perfetto/src/base/clock_snapshots.cc b/third_party/perfetto/src/base/clock_snapshots.cc
+index 937e7e6fdb..187c0c44b9 100644
+--- a/third_party/perfetto/src/base/clock_snapshots.cc
++++ b/third_party/perfetto/src/base/clock_snapshots.cc
+@@ -28,7 +28,7 @@ ClockSnapshotVector CaptureClockSnapshots() {
+     !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) &&     \
+     !PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) && \
+     !PERFETTO_BUILDFLAG(PERFETTO_OS_NACL) &&    \
+-    !PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
++    !PERFETTO_BUILDFLAG(PERFETTO_OS_QNX) && !defined(__GNU__)
+   struct {
+     clockid_t id;
+     protos::pbzero::BuiltinClock type;
+diff --git a/third_party/perfetto/src/base/event_fd.cc b/third_party/perfetto/src/base/event_fd.cc
+index 55f286eed0..f6384de878 100644
+--- a/third_party/perfetto/src/base/event_fd.cc
++++ b/third_party/perfetto/src/base/event_fd.cc
+@@ -25,7 +25,7 @@
+ #include <synchapi.h>
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
+ #include <unistd.h>
+-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+ #include <sys/eventfd.h>
+ #include <unistd.h>
+diff --git a/third_party/perfetto/src/base/unix_socket.cc b/third_party/perfetto/src/base/unix_socket.cc
+index a8920b2df4..bb56794c2e 100644
+--- a/third_party/perfetto/src/base/unix_socket.cc
++++ b/third_party/perfetto/src/base/unix_socket.cc
+@@ -1073,7 +1073,7 @@ void UnixSocket::ReadPeerCredentialsPosix() {
+   ignore_result(peer_gid);
+   PERFETTO_CHECK(res == 0);
+   // There is no pid when obtaining peer credentials for QNX
+-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+   struct ucred user_cred;
+   socklen_t len = sizeof(user_cred);
+diff --git a/third_party/perfetto/src/tracing/service/tracing_service_impl.cc b/third_party/perfetto/src/tracing/service/tracing_service_impl.cc
+index 83a2b2ec94..727cc4560f 100644
+--- a/third_party/perfetto/src/tracing/service/tracing_service_impl.cc
++++ b/third_party/perfetto/src/tracing/service/tracing_service_impl.cc
+@@ -214,7 +214,7 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt) {
+ 
+ #define IOV_MAX 1024  // Linux compatible limit.
+ 
+-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX) || defined(__GNU__)
+ #define IOV_MAX 1024  // Linux compatible limit.
+ #endif
+ 
