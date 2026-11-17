@@ -2,7 +2,9 @@
 build.patch
 base.patch
 v8.patch
+buildtools.patch
 third_party-abseil-cpp.patch
+third_party-ffmpeg.patch
 third_party-libc++.patch
 third_party-perfetto.patch
 ui.patch

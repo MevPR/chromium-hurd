@@ -6,6 +6,9 @@ SRC=${1:?usage: setup-toolchain.sh SRCDIR}
 cd "$SRC"
 python3 tools/clang/scripts/update.py
 python3 tools/rust/update_rust.py
+# Tarballs ship without the prebuilt Node.js; use the build host's.
+mkdir -p third_party/node/linux/node-linux-x64/bin
+ln -sf "$(command -v node)" third_party/node/linux/node-linux-x64/bin/node
 if [ ! -x out/gn/gn ]; then
   LLVM=$PWD/third_party/llvm-build/Release+Asserts
   export CC=$LLVM/bin/clang CXX=$LLVM/bin/clang++ AR=$LLVM/bin/llvm-ar

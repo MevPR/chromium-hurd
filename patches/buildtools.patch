@@ -1,0 +1,14 @@
+diff --git a/buildtools/third_party/libc++abi/BUILD.gn b/buildtools/third_party/libc++abi/BUILD.gn
+index e04e7afbbb..2ff7eeaa04 100644
+--- a/buildtools/third_party/libc++abi/BUILD.gn
++++ b/buildtools/third_party/libc++abi/BUILD.gn
+@@ -59,7 +59,8 @@ target(libcxxabi_target_type, "libc++abi") {
+ 
+   defines = [ "LIBCXXABI_SILENT_TERMINATE" ]
+ 
+-  if (is_linux || is_android) {
++  # GNU/Hurd has no futex(2); libc++abi then uses a global mutex.
++  if ((is_linux && !is_hurd) || is_android) {
+     defines += [ "_LIBCXXABI_USE_FUTEX" ]
+   }
+ 
