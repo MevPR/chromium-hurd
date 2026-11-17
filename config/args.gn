@@ -20,7 +20,6 @@ use_sysroot = false
 # Source tarballs ship without Google's infrastructure.
 use_remoteexec = false
 use_siso = false
-enable_nacl = false
 treat_warnings_as_errors = false
 clang_use_chrome_plugins = false
 chrome_pgo_phase = 0
@@ -32,7 +31,6 @@ is_cfi = false
 ozone_platform = "x11"
 ozone_platform_x11 = true
 ozone_platform_wayland = false
-use_gbm = false
 # Only referenced by unused targets; avoids the pkg-config lookup of gbm.
 use_system_minigbm = false
 use_vaapi = false
@@ -49,13 +47,12 @@ use_gio = true
 use_cups = true
 use_kerberos = true
 
-# The Linux sandbox is built on seccomp-bpf, user namespaces and the
-# setuid helper, none of which exist on the Hurd. Process isolation is
-# kept; the syscall-filtering sandbox is disabled (see docs/sandbox.md).
-use_seccomp_bpf = false
+# The Linux sandbox (seccomp-bpf, namespaces, setuid helper) is disabled
+# for the Hurd in //sandbox/features.gni and //sandbox/linux/BUILD.gn; see
+# docs/PORTING.md.
 
-# Crash reporting uses ptrace and /proc/<pid>/mem.
-use_crashpad = false
+# Crash reporting: Crashpad is built, but its handler (ptrace-based) is not
+# started on the Hurd; see components/crash/core/app/crashpad_linux.cc.
 
 # Features that depend on unavailable services or hardware.
 enable_hangout_services_extension = false

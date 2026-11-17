@@ -1,0 +1,14 @@
+diff --git a/sandbox/features.gni b/sandbox/features.gni
+index 8c5db2c6fa..86b1266f7f 100644
+--- a/sandbox/features.gni
++++ b/sandbox/features.gni
+@@ -6,7 +6,8 @@
+ # currently.
+ # Do not disable seccomp_bpf anywhere without talking to
+ # security@chromium.org!
+-use_seccomp_bpf = (is_linux || is_chromeos || is_android) &&
++# GNU/Hurd has no seccomp (nor any other Linux kernel sandboxing facility).
++use_seccomp_bpf = ((is_linux && !is_hurd) || is_chromeos || is_android) &&
+                   (current_cpu == "x86" || current_cpu == "x64" ||
+                    current_cpu == "arm" || current_cpu == "arm64" ||
+                    current_cpu == "mipsel" || current_cpu == "mips64el")
