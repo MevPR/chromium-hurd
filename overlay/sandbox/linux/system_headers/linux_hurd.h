@@ -38,6 +38,14 @@
 // ioctl request numbers (Linux values)
 #undef TCGETS
 #define TCGETS 0x5401
+// The Hurd defines these with its own _IOT_ type descriptions; replace them
+// with the Linux request numbers.
+#undef FIONREAD
+#define FIONREAD 0x541B
+#undef SIOCGIFNAME
+#define SIOCGIFNAME 0x8910
+#undef SIOCGIFINDEX
+#define SIOCGIFINDEX 0x8933
 #ifndef SIOCETHTOOL
 #define SIOCETHTOOL 0x8946
 #endif
