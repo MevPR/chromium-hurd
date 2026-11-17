@@ -1,0 +1,35 @@
+diff --git a/third_party/xnnpack/src/src/runtime.c b/third_party/xnnpack/src/src/runtime.c
+index cba81ca3e5..89f00b6dbf 100644
+--- a/third_party/xnnpack/src/src/runtime.c
++++ b/third_party/xnnpack/src/src/runtime.c
+@@ -1085,7 +1085,7 @@ enum xnn_status xnn_setup_runtime_v2(
+ 
+ static xnn_timestamp xnn_read_timer() {
+   xnn_timestamp timestamp;
+-#ifdef __MACH__
++#if defined(__MACH__) && !defined(__GNU__)
+   timestamp = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+   if (timestamp == 0) {
+     xnn_log_warning("clock_gettime failed: error code %d", errno);
+@@ -1109,7 +1109,7 @@ static xnn_timestamp xnn_read_timer() {
+ }
+ 
+ static inline uint64_t xnn_get_elapsed_time(const xnn_timestamp* start, const xnn_timestamp* end) {
+-#ifdef __MACH__
++#if defined(__MACH__) && !defined(__GNU__)
+   const uint64_t kMicrosInNanos = 1000;
+   return (*end - *start) / kMicrosInNanos;
+ #elif __EMSCRIPTEN__
+diff --git a/third_party/xnnpack/src/src/xnnpack/subgraph.h b/third_party/xnnpack/src/src/xnnpack/subgraph.h
+index f83106c1ad..69fa8c12d2 100644
+--- a/third_party/xnnpack/src/src/xnnpack/subgraph.h
++++ b/third_party/xnnpack/src/src/xnnpack/subgraph.h
+@@ -432,7 +432,7 @@ struct xnn_node {
+   xnn_setup_operator_fn setup;
+ };
+ 
+-#ifdef __MACH__
++#if defined(__MACH__) && !defined(__GNU__)
+ typedef uint64_t xnn_timestamp;
+ #elif __EMSCRIPTEN__
+ typedef double xnn_timestamp;

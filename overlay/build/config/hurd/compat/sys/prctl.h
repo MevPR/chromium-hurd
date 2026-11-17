@@ -26,6 +26,8 @@
 #define PR_SET_TIMERSLACK 29
 #define PR_SET_NO_NEW_PRIVS 38
 #define PR_GET_NO_NEW_PRIVS 39
+#define PR_SET_PTRACER 0x59616d61
+#define PR_SET_PTRACER_ANY ((unsigned long)-1)
 
 // Thread names are limited to 16 bytes including the terminator on Linux.
 #define HURD_COMPAT_PR_NAME_LEN 16

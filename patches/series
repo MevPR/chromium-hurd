@@ -7,9 +7,16 @@ components.patch
 mojo.patch
 net.patch
 third_party-abseil-cpp.patch
+third_party-cpu_features.patch
+third_party-cpuinfo.patch
+third_party-crashpad.patch
+third_party-dav1d.patch
 third_party-dawn.patch
 third_party-ffmpeg.patch
+third_party-fontconfig.patch
 third_party-libc++.patch
+third_party-libdrm.patch
 third_party-perfetto.patch
 third_party-webrtc.patch
+third_party-xnnpack.patch
 ui.patch

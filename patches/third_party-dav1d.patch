@@ -1,0 +1,14 @@
+diff --git a/third_party/dav1d/BUILD.gn b/third_party/dav1d/BUILD.gn
+index d75d823713..0ad7a9f175 100644
+--- a/third_party/dav1d/BUILD.gn
++++ b/third_party/dav1d/BUILD.gn
+@@ -60,7 +60,8 @@ config("public_dav1d_config") {
+     defines = [ "CONFIG_LOG=1" ]
+   }
+ 
+-  if (!is_android && !is_apple && !is_win) {
++  # GNU/Hurd has no CPU affinity API.
++  if (!is_android && !is_apple && !is_win && !is_hurd) {
+     defines += [
+       "HAVE_PTHREAD_GETAFFINITY_NP=1",
+       "HAVE_PTHREAD_SETAFFINITY_NP=1",

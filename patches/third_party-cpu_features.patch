@@ -1,0 +1,15 @@
+diff --git a/third_party/cpu_features/src/include/cpu_features_macros.h b/third_party/cpu_features/src/include/cpu_features_macros.h
+index 99964b40dc..3d267feb77 100644
+--- a/third_party/cpu_features/src/include/cpu_features_macros.h
++++ b/third_party/cpu_features/src/include/cpu_features_macros.h
+@@ -112,7 +112,9 @@
+ #define CPU_FEATURES_OS_WINDOWS
+ #endif
+ 
+-#if (defined(__apple__) || defined(__APPLE__) || defined(__MACH__))
++#if (defined(__apple__) || defined(__APPLE__) || defined(__MACH__)) && \
++    !defined(__GNU__)
++// GNU/Hurd defines __MACH__ as well.
+ // From https://stackoverflow.com/a/49560690
+ #include "TargetConditionals.h"
+ #if TARGET_OS_OSX

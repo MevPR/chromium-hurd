@@ -1,0 +1,24 @@
+diff --git a/third_party/cpuinfo/BUILD.gn b/third_party/cpuinfo/BUILD.gn
+index 1fd7f0fa7b..997366dab3 100644
+--- a/third_party/cpuinfo/BUILD.gn
++++ b/third_party/cpuinfo/BUILD.gn
+@@ -87,7 +87,9 @@ target(_cpuinfo_target_type, "cpuinfo") {
+ }
+ 
+ source_set("os_specific") {
+-  if (is_chromeos || is_linux || is_android) {
++  # cpuinfo's Linux backend reads sysfs, which GNU/Hurd does not have; there
++  # cpuinfo_initialize() reports the OS as unsupported.
++  if (is_chromeos || (is_linux && !is_hurd) || is_android) {
+     sources = [
+       "src/src/linux/cpulist.c",
+       "src/src/linux/multiline.c",
+@@ -169,7 +171,7 @@ source_set("x86_cache") {
+ }
+ 
+ source_set("cpu_and_os_specific") {
+-  if ((is_linux || is_chromeos) &&
++  if (((is_linux && !is_hurd) || is_chromeos) &&
+       (current_cpu == "x86" || current_cpu == "x64")) {
+     sources = [
+       "src/src/x86/linux/cpuinfo.c",

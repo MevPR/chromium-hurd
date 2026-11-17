@@ -1,3 +1,82 @@
+diff --git a/ui/events/keycodes/dom/keycode_converter.cc b/ui/events/keycodes/dom/keycode_converter.cc
+index c69dd14536..6cdd6bed10 100644
+--- a/ui/events/keycodes/dom/keycode_converter.cc
++++ b/ui/events/keycodes/dom/keycode_converter.cc
+@@ -15,7 +15,14 @@
+ #include "ui/events/keycodes/dom/dom_code.h"
+ #include "ui/events/keycodes/dom/dom_key.h"
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd has no <linux/input.h>. These are the evdev codes used below,
++// which X11's evdev keycode set (offset by 8) is defined in terms of.
++#define KEY_RESERVED 0
++#define KEY_PLAY 207
++#define KEY_PLAYCD 200
++#define KEY_MAX 0x2ff
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include <linux/input.h>
+ #endif
+ 
+diff --git a/ui/gfx/linux/BUILD.gn b/ui/gfx/linux/BUILD.gn
+index 142b78b458..0b6c988ec3 100644
+--- a/ui/gfx/linux/BUILD.gn
++++ b/ui/gfx/linux/BUILD.gn
+@@ -48,7 +48,29 @@ source_set("gbm") {
+   ]
+ }
+ 
+-if (ozone_platform_x11) {
++if (ozone_platform_x11 && is_hurd) {
++  # GNU/Hurd has no DRM render nodes and no GBM. Only minigbm's header is
++  # needed to compile the (device-less) implementation; nothing is linked.
++  config("minigbm_headers") {
++    include_dirs = [ "//third_party/minigbm/src" ]
++  }
++
++  component("gbm_support_x11") {
++    sources = [
++      "gbm_support_x11.h",
++      "gbm_support_x11_hurd.cc",
++    ]
++    configs += [ ":minigbm_headers" ]
++    deps = [
++      "//base",
++      "//components/viz/common/resources:shared_image_format",
++      "//skia",
++      "//ui/gfx:buffer_types",
++      "//ui/gfx:memory_buffer",
++    ]
++    defines = [ "IS_GBM_SUPPORT_X11_IMPL" ]
++  }
++} else if (ozone_platform_x11) {
+   component("gbm_support_x11") {
+     sources = [
+       "gbm_support_x11.cc",
+diff --git a/ui/ozone/platform/x11/BUILD.gn b/ui/ozone/platform/x11/BUILD.gn
+index 7998b35afb..a15e53070a 100644
+--- a/ui/ozone/platform/x11/BUILD.gn
++++ b/ui/ozone/platform/x11/BUILD.gn
+@@ -82,7 +82,6 @@ source_set("x11") {
+     "//ui/events/x",
+     "//ui/gfx",
+     "//ui/gfx/geometry",
+-    "//ui/gfx/linux:gbm",
+     "//ui/gfx/linux:gbm_support_x11",
+     "//ui/gfx/x",
+     "//ui/gl",
+@@ -93,6 +92,11 @@ source_set("x11") {
+     "//ui/platform_window/wm",
+   ]
+ 
++  # There is no GBM on GNU/Hurd; see //ui/gfx/linux:gbm_support_x11.
++  if (!is_hurd) {
++    deps += [ "//ui/gfx/linux:gbm" ]
++  }
++
+   if (is_linux) {
+     sources += [
+       "linux_ui_delegate_x11.cc",
 diff --git a/ui/webui/webui_features.gni b/ui/webui/webui_features.gni
 index 80aea6de6e..1a7d1969f1 100644
 --- a/ui/webui/webui_features.gni

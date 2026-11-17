@@ -15,5 +15,7 @@ be impractical:
   data structures used by `//net`'s address tracking. The Hurd has no
   netlink; `socket(AF_NETLINK, ...)` fails at runtime and
   `AddressTrackerLinux` then reports the network as online.
+* `linux/sync_file.h`: DMA fence ioctls for `//third_party/libsync`. There
+  are no DRM drivers, so fence descriptors never exist.
 
 Keep this list short. Prefer fixing the user when there are only a few.

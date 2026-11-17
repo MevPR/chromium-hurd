@@ -1,3 +1,28 @@
+diff --git a/components/crash/core/app/crashpad_linux.cc b/components/crash/core/app/crashpad_linux.cc
+index 879b0a5d1e..f9c5e7d809 100644
+--- a/components/crash/core/app/crashpad_linux.cc
++++ b/components/crash/core/app/crashpad_linux.cc
+@@ -142,6 +142,12 @@ bool PlatformCrashpadInitialization(
+     const std::vector<std::string>& initial_arguments,
+     const std::vector<base::FilePath>& attachments,
+     base::FilePath* database_path) {
++#if BUILDFLAG(IS_HURD)
++  // The Crashpad handler needs ptrace() and /proc/<pid>/mem to snapshot a
++  // crashed process, neither of which works on GNU/Hurd. Run without crash
++  // reporting rather than starting a handler that cannot work.
++  return false;
++#else
+   DCHECK_EQ(initial_client, browser_process);
+   DCHECK(initial_arguments.empty());
+ 
+@@ -304,6 +310,7 @@ bool PlatformCrashpadInitialization(
+ #endif
+ 
+   return true;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ }  // namespace internal
 diff --git a/components/dbus/xdg/file_transfer_portal.cc b/components/dbus/xdg/file_transfer_portal.cc
 index 0fbd58daa7..61d5bb75de 100644
 --- a/components/dbus/xdg/file_transfer_portal.cc

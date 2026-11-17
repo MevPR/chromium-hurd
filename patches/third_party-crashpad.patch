@@ -1,0 +1,138 @@
+diff --git a/third_party/crashpad/crashpad/client/crashpad_client_linux.cc b/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
+index 32138082de..7e626d1b7c 100644
+--- a/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
++++ b/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
+@@ -17,7 +17,9 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <limits.h>
++#if !defined(__GNU__)
+ #include <linux/futex.h>
++#endif
+ #include <pthread.h>
+ #include <stdlib.h>
+ #include <sys/mman.h>
+diff --git a/third_party/crashpad/crashpad/compat/linux/sys/mman_memfd_create.cc b/third_party/crashpad/crashpad/compat/linux/sys/mman_memfd_create.cc
+index 0b559ec405..12686de562 100644
+--- a/third_party/crashpad/crashpad/compat/linux/sys/mman_memfd_create.cc
++++ b/third_party/crashpad/crashpad/compat/linux/sys/mman_memfd_create.cc
+@@ -20,7 +20,7 @@
+ 
+ #include "util/misc/no_cfi_icall.h"
+ 
+-#if defined(__GLIBC__)
++#if defined(__GLIBC__) && !defined(__GNU__)
+ 
+ extern "C" {
+ 
+diff --git a/third_party/crashpad/crashpad/compat/linux/sys/user.h b/third_party/crashpad/crashpad/compat/linux/sys/user.h
+index a41ffe668a..24ec3a6a8e 100644
+--- a/third_party/crashpad/crashpad/compat/linux/sys/user.h
++++ b/third_party/crashpad/crashpad/compat/linux/sys/user.h
+@@ -15,7 +15,29 @@
+ #ifndef CRASHPAD_COMPAT_LINUX_SYS_USER_H_
+ #define CRASHPAD_COMPAT_LINUX_SYS_USER_H_
+ 
++#if defined(__GNU__)
++// GNU/Hurd has no <sys/user.h>. Crashpad only uses these as the layout of
++// Linux ptrace register sets, which never succeed on the Hurd, but the sizes
++// are checked at compile time, so mirror the Linux x86-64 definitions.
++#if !defined(__x86_64__)
++#error Only x86-64 GNU/Hurd is supported
++#endif
++struct user_regs_struct {
++  unsigned long long r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8, rax, rcx,
++      rdx, rsi, rdi, orig_rax, rip, cs, eflags, rsp, ss, fs_base, gs_base, ds,
++      es, fs, gs;
++};
++struct user_fpregs_struct {
++  unsigned short cwd, swd, ftw, fop;
++  unsigned long long rip, rdp;
++  unsigned int mxcsr, mxcr_mask;
++  unsigned int st_space[32];
++  unsigned int xmm_space[64];
++  unsigned int padding[24];
++};
++#else
+ #include_next <sys/user.h>
++#endif
+ 
+ #include <features.h>
+ 
+diff --git a/third_party/crashpad/crashpad/third_party/lss/lss.h b/third_party/crashpad/crashpad/third_party/lss/lss.h
+index 90cb9bcfe7..ec36dcfc13 100644
+--- a/third_party/crashpad/crashpad/third_party/lss/lss.h
++++ b/third_party/crashpad/crashpad/third_party/lss/lss.h
+@@ -15,7 +15,10 @@
+ #ifndef CRASHPAD_THIRD_PARTY_LSS_LSS_H_
+ #define CRASHPAD_THIRD_PARTY_LSS_LSS_H_
+ 
+-#if defined(CRASHPAD_LSS_SOURCE_EXTERNAL)
++#if defined(__GNU__)
++// GNU/Hurd has no Linux system calls; see lss_hurd.h.
++#include "third_party/lss/lss_hurd.h"
++#elif defined(CRASHPAD_LSS_SOURCE_EXTERNAL)
+ #include "third_party/lss/linux_syscall_support.h"
+ #elif defined(CRASHPAD_LSS_SOURCE_EMBEDDED)
+ #include "third_party/lss/lss/linux_syscall_support.h"
+diff --git a/third_party/crashpad/crashpad/util/file/file_writer.cc b/third_party/crashpad/crashpad/util/file/file_writer.cc
+index a5bfa0811f..56d987907f 100644
+--- a/third_party/crashpad/crashpad/util/file/file_writer.cc
++++ b/third_party/crashpad/crashpad/util/file/file_writer.cc
+@@ -87,6 +87,9 @@ bool WeakFileHandleFileWriter::WriteIoVec(std::vector<WritableIoVec>* iovecs) {
+   // this file to the NDK as <limits.h>, substituting
+   // bionic/libc/include/bits/posix_limits.h.
+   const size_t kIovMax = sysconf(_SC_IOV_MAX);
++#elif defined(__GNU__)
++  // GNU/Hurd has no IOV_MAX limit; use the Linux value.
++  const size_t kIovMax = 1024;
+ #else
+   const size_t kIovMax = IOV_MAX;
+ #endif
+diff --git a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc b/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc
+index cb184a44b5..8d0116bcd6 100644
+--- a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc
++++ b/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc
+@@ -17,6 +17,11 @@
+ #include <sys/ptrace.h>
+ #include <sys/wait.h>
+ 
++#if !defined(__WALL)
++// GNU/Hurd: there are no clone()d threads to wait for separately.
++#define __WALL 0
++#endif
++
+ #include "base/logging.h"
+ #include "base/posix/eintr_wrapper.h"
+ 
+diff --git a/third_party/crashpad/crashpad/util/misc/time_linux.cc b/third_party/crashpad/crashpad/util/misc/time_linux.cc
+index bb43e858f6..a697df9059 100644
+--- a/third_party/crashpad/crashpad/util/misc/time_linux.cc
++++ b/third_party/crashpad/crashpad/util/misc/time_linux.cc
+@@ -20,7 +20,12 @@ namespace crashpad {
+ 
+ bool GetBootTime(timespec* boot_time) {
+   timespec uptime;
++#if defined(CLOCK_BOOTTIME)
+   if (clock_gettime(CLOCK_BOOTTIME, &uptime) != 0) {
++#else
++  // GNU/Hurd: no CLOCK_BOOTTIME, but the system never suspends either.
++  if (clock_gettime(CLOCK_MONOTONIC, &uptime) != 0) {
++#endif
+     PLOG(ERROR) << "clock_gettime";
+     return false;
+   }
+diff --git a/third_party/crashpad/crashpad/util/posix/signals.cc b/third_party/crashpad/crashpad/util/posix/signals.cc
+index 58f957c40d..47a43107ce 100644
+--- a/third_party/crashpad/crashpad/util/posix/signals.cc
++++ b/third_party/crashpad/crashpad/util/posix/signals.cc
+@@ -318,7 +318,8 @@ void Signals::RestoreHandlerAndReraiseSignalOnReturn(
+   // signals that do not re-raise autonomously), such as signals delivered via
+   // kill() and asynchronous hardware faults such as SEGV_MTEAERR, which would
+   // otherwise be lost when re-raising the signal via raise().
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)) && \
++    !defined(__GNU__)
+   int retval = syscall(SYS_rt_tgsigqueueinfo,
+                        getpid(),
+                        syscall(SYS_gettid),

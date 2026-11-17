@@ -1,0 +1,14 @@
+diff --git a/third_party/fontconfig/include/meson-config.h b/third_party/fontconfig/include/meson-config.h
+index 5f9aa0c4ed..b60550464b 100644
+--- a/third_party/fontconfig/include/meson-config.h
++++ b/third_party/fontconfig/include/meson-config.h
+@@ -126,7 +126,9 @@
+ 
+ #define HAVE_STRUCT_STATFS_F_FLAGS 1
+ 
++#if !defined(__GNU__)  // GNU/Hurd has no <sys/mount.h>.
+ #define HAVE_SYS_MOUNT_H 1
++#endif
+ 
+ #define HAVE_SYS_PARAM_H 1
+ 

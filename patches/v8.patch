@@ -13,3 +13,28 @@ index 8956a3dc35..b131ec8588 100644
    enabled_external_v8_defines += [ "V8_HAVE_TARGET_OS" ]
    enabled_external_v8_defines += [ "V8_TARGET_OS_LINUX" ]
  } else if (target_os == "mac") {
+diff --git a/v8/include/v8config.h b/v8/include/v8config.h
+index b7aeeade6b..19ea5dd0c2 100644
+--- a/v8/include/v8config.h
++++ b/v8/include/v8config.h
+@@ -81,6 +81,7 @@ path. Add it with -I<path> to the command line
+ //  V8_OS_DRAGONFLYBSD  - DragonFlyBSD
+ //  V8_OS_FREEBSD       - FreeBSD
+ //  V8_OS_FUCHSIA       - Fuchsia
++//  V8_OS_HURD          - GNU/Hurd
+ //  V8_OS_LINUX         - Linux (Android, ChromeOS, Linux, ...)
+ //  V8_OS_DARWIN        - Darwin (macOS, iOS)
+ //  V8_OS_MACOS         - macOS
+@@ -127,6 +128,12 @@ path. Add it with -I<path> to the command line
+ # define V8_OS_POSIX 1
+ # define V8_OS_STRING "linux"
+ 
++#elif defined(__GNU__)
++// GNU/Hurd: POSIX with a glibc/ELF userland, but not the Linux kernel.
++# define V8_OS_HURD 1
++# define V8_OS_POSIX 1
++# define V8_OS_STRING "hurd"
++
+ #elif defined(__sun)
+ # define V8_OS_POSIX 1
+ # define V8_OS_SOLARIS 1

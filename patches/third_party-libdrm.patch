@@ -1,0 +1,27 @@
+diff --git a/third_party/libdrm/src/include/drm/drm.h b/third_party/libdrm/src/include/drm/drm.h
+index 1666e91b19..8a22414058 100644
+--- a/third_party/libdrm/src/include/drm/drm.h
++++ b/third_party/libdrm/src/include/drm/drm.h
+@@ -41,6 +41,22 @@
+ #include <asm/ioctl.h>
+ typedef unsigned int drm_handle_t;
+ 
++#elif defined(__GNU__)
++/* GNU/Hurd, as in Debian's libdrm: _IO* come from <sys/ioctl.h>. */
++#include <stdint.h>
++#include <sys/types.h>
++#include <sys/ioctl.h>
++typedef int8_t   __s8;
++typedef uint8_t  __u8;
++typedef int16_t  __s16;
++typedef uint16_t __u16;
++typedef int32_t  __s32;
++typedef uint32_t __u32;
++typedef int64_t  __s64;
++typedef uint64_t __u64;
++typedef size_t   __kernel_size_t;
++typedef unsigned int drm_handle_t;
++
+ #else /* One of the BSDs */
+ 
+ #include <stdint.h>
