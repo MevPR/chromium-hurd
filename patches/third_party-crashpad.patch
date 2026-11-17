@@ -25,6 +25,24 @@ index 0b559ec405..12686de562 100644
  
  extern "C" {
  
+diff --git a/third_party/crashpad/crashpad/compat/linux/sys/ptrace.h b/third_party/crashpad/crashpad/compat/linux/sys/ptrace.h
+index 604a46ab06..7dddd2d1fc 100644
+--- a/third_party/crashpad/crashpad/compat/linux/sys/ptrace.h
++++ b/third_party/crashpad/crashpad/compat/linux/sys/ptrace.h
+@@ -19,6 +19,13 @@
+ 
+ #include <sys/cdefs.h>
+ 
++#if defined(__GNU__) && !defined(PTRACE_GETREGSET)
++// GNU/Hurd's ptrace() lacks this Linux request; it fails at runtime.
++static constexpr __ptrace_request PTRACE_GETREGSET =
++    static_cast<__ptrace_request>(0x4204);
++#define PTRACE_GETREGSET PTRACE_GETREGSET
++#endif
++
+ // https://sourceware.org/bugzilla/show_bug.cgi?id=22433
+ #if !defined(PTRACE_GET_THREAD_AREA) && !defined(PT_GET_THREAD_AREA) && \
+     defined(__GLIBC__)
 diff --git a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
 index 85882e8ee4..c3045b14ee 100644
 --- a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
@@ -112,7 +130,7 @@ index 1680a4ed32..b4664b6c7e 100644
      if (rv < 0) {
        return SendReadError(static_cast<ReadError>(errno));
 diff --git a/third_party/crashpad/crashpad/util/linux/ptracer.cc b/third_party/crashpad/crashpad/util/linux/ptracer.cc
-index 83fa6824c8..30126b9873 100644
+index 83fa6824c8..ece5034ae8 100644
 --- a/third_party/crashpad/crashpad/util/linux/ptracer.cc
 +++ b/third_party/crashpad/crashpad/util/linux/ptracer.cc
 @@ -15,7 +15,11 @@
@@ -127,6 +145,30 @@ index 83fa6824c8..30126b9873 100644
  #include <string.h>
  #include <sys/ptrace.h>
  #include <sys/uio.h>
+@@ -27,7 +31,22 @@
+ #include "build/build_config.h"
+ #include "util/misc/from_pointer_cast.h"
+ 
+-#if defined(ARCH_CPU_X86_FAMILY)
++#if defined(ARCH_CPU_X86_FAMILY) && defined(__GNU__)
++// GNU/Hurd has no <asm/ldt.h>. Linux's struct user_desc, for the
++// PTRACE_GET_THREAD_AREA request (which never succeeds on the Hurd).
++struct user_desc {
++  unsigned int entry_number;
++  unsigned int base_addr;
++  unsigned int limit;
++  unsigned int seg_32bit : 1;
++  unsigned int contents : 2;
++  unsigned int read_exec_only : 1;
++  unsigned int limit_in_pages : 1;
++  unsigned int seg_not_present : 1;
++  unsigned int useable : 1;
++  unsigned int lm : 1;
++};
++#elif defined(ARCH_CPU_X86_FAMILY)
+ #include <asm/ldt.h>
+ #endif
+ 
 diff --git a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc b/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc
 index cb184a44b5..8d0116bcd6 100644
 --- a/third_party/crashpad/crashpad/util/linux/scoped_ptrace_attach.cc

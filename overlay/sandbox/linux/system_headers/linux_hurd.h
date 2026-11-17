@@ -16,7 +16,34 @@
 
 #if defined(__GNU__)
 
+#include <linux/types.h>  // From //build/config/hurd/compat.
+#include <sys/ioctl.h>
 #include <sys/types.h>
+
+// The Hurd's _IO*() macros encode a type description and need an
+// _IOT_<struct> macro per type. Seccomp policies compare against Linux
+// request numbers, so use the Linux encoding in files that include this.
+#undef _IOC
+#undef _IO
+#undef _IOR
+#undef _IOW
+#undef _IOWR
+#define _IOC(dir, type, nr, size)                                       \
+  ((unsigned long)(((dir) << 30) | ((size) << 16) | ((type) << 8) | (nr)))
+#define _IO(type, nr) _IOC(0U, (type), (nr), 0U)
+#define _IOR(type, nr, argtype) _IOC(2U, (type), (nr), sizeof(argtype))
+#define _IOW(type, nr, argtype) _IOC(1U, (type), (nr), sizeof(argtype))
+#define _IOWR(type, nr, argtype) _IOC(3U, (type), (nr), sizeof(argtype))
+
+// ioctl request numbers (Linux values)
+#undef TCGETS
+#define TCGETS 0x5401
+#ifndef SIOCETHTOOL
+#define SIOCETHTOOL 0x8946
+#endif
+#ifndef SIOCGIWNAME
+#define SIOCGIWNAME 0x8B01
+#endif
 
 // <sched.h>
 #ifndef CLONE_VM
@@ -58,6 +85,15 @@
 #endif
 
 // <sys/mman.h>
+#ifndef MAP_DENYWRITE
+#define MAP_DENYWRITE 0x00800
+#endif
+#ifndef MAP_LOCKED
+#define MAP_LOCKED 0x02000
+#endif
+#ifndef MAP_STACK
+#define MAP_STACK 0x20000
+#endif
 #ifndef MADV_REMOVE
 #define MADV_REMOVE 9
 #endif
@@ -82,6 +118,29 @@ struct ucred {
 // <sys/ptrace.h>
 #ifndef PTRACE_GET_THREAD_AREA
 #define PTRACE_GET_THREAD_AREA 25
+#endif
+#ifndef PTRACE_GETREGSET
+#define PTRACE_GETREGSET 0x4204
+#endif
+
+// <sys/resource.h>
+#ifndef RUSAGE_THREAD
+#define RUSAGE_THREAD 1
+#endif
+
+// <netinet/in.h>
+#ifndef IP_MTU_DISCOVER
+#define IP_MTU_DISCOVER 10
+#endif
+#ifndef IP_RECVERR
+#define IP_RECVERR 11
+#endif
+#ifndef IP_RECVTOS
+#define IP_RECVTOS 13
+#endif
+#ifndef MCAST_JOIN_SOURCE_GROUP
+#define MCAST_JOIN_SOURCE_GROUP 46
+#define MCAST_LEAVE_SOURCE_GROUP 47
 #endif
 
 // <linux/kcmp.h>

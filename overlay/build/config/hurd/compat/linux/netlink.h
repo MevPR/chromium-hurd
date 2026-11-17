@@ -13,6 +13,7 @@
 // network as online. Only the definitions Chromium uses are provided; the
 // values match the Linux UAPI so the code behaves identically.
 
+#include <linux/types.h>
 #include <stdint.h>
 #include <sys/socket.h>
 

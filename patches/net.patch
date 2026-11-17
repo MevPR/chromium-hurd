@@ -22,17 +22,18 @@ index de883e4552..3b7fd0570d 100644
  #include <sys/ioctl.h>
  
 diff --git a/net/base/network_interfaces_linux.cc b/net/base/network_interfaces_linux.cc
-index d543bd080f..f2f880c346 100644
+index d543bd080f..97c078f293 100644
 --- a/net/base/network_interfaces_linux.cc
 +++ b/net/base/network_interfaces_linux.cc
-@@ -10,11 +10,16 @@
+@@ -9,12 +9,17 @@
+ 
  #include "build/build_config.h"
  
- #if !BUILDFLAG(IS_ANDROID)
 +#if BUILDFLAG(IS_HURD)
 +// GNU/Hurd has neither wireless extensions nor ethtool.
 +#include <net/if.h>
 +#else
+ #if !BUILDFLAG(IS_ANDROID)
  #include <linux/ethtool.h>
  #endif  // !BUILDFLAG(IS_ANDROID)
  #include <linux/if.h>

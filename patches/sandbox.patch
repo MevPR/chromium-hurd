@@ -74,6 +74,30 @@ index 6442339270..279f431ff3 100644
  
  namespace sandbox {
  
+diff --git a/sandbox/linux/seccomp-bpf/trap.cc b/sandbox/linux/seccomp-bpf/trap.cc
+index 212e80eecc..5f0d124544 100644
+--- a/sandbox/linux/seccomp-bpf/trap.cc
++++ b/sandbox/linux/seccomp-bpf/trap.cc
+@@ -26,6 +26,7 @@
+ #include "sandbox/linux/services/syscall_wrappers.h"
+ #include "sandbox/linux/system_headers/linux_seccomp.h"
+ #include "sandbox/linux/system_headers/linux_signal.h"
++#include "sandbox/linux/system_headers/linux_syscalls.h"
+ 
+ namespace {
+ 
+@@ -170,7 +171,10 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
+ 
+   // Obtain the siginfo information that is specific to SIGSYS.
+   struct arch_sigsys sigsys;
+-#if defined(si_call_addr)
++#if defined(__GNU__)
++  // GNU/Hurd has no seccomp, so SIGSYS never carries this information.
++  memset(&sigsys, 0, sizeof(sigsys));
++#elif defined(si_call_addr)
+   sigsys.ip = info->si_call_addr;
+   sigsys.nr = info->si_syscall;
+   sigsys.arch = info->si_arch;
 diff --git a/sandbox/linux/services/credentials.cc b/sandbox/linux/services/credentials.cc
 index baeb313a6d..ca6fb4a9e9 100644
 --- a/sandbox/linux/services/credentials.cc
@@ -310,10 +334,10 @@ index 88100791cc..8ed9319d3d 100644
  #include "sandbox/policy/linux/bpf_base_policy_linux.h"
  #include "sandbox/policy/linux/sandbox_linux.h"
 diff --git a/sandbox/policy/linux/bpf_renderer_policy_linux.cc b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
-index 8709f5e70a..baa1b5fed7 100644
+index 8709f5e70a..fb50e0bf90 100644
 --- a/sandbox/policy/linux/bpf_renderer_policy_linux.cc
 +++ b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
-@@ -15,11 +15,14 @@
+@@ -15,6 +15,7 @@
  #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
  #include "sandbox/linux/system_headers/linux_prctl.h"
  #include "sandbox/linux/system_headers/linux_syscalls.h"
@@ -321,13 +345,6 @@ index 8709f5e70a..baa1b5fed7 100644
  #include "sandbox/policy/linux/sandbox_linux.h"
  
  // TODO(vignatti): replace the local definitions below with #include
- // <linux/dma-buf.h> once kernel version 4.6 becomes widely used.
-+#if !defined(__GNU__)  // Linux kernel header; see linux_hurd.h.
- #include <linux/types.h>
-+#endif
- 
- struct local_dma_buf_sync {
-   __u64 flags;
 diff --git a/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc b/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc
 index 39624b506d..512b03b18f 100644
 --- a/sandbox/policy/linux/bpf_speech_recognition_policy_linux.cc

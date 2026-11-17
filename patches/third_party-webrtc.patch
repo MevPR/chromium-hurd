@@ -1,5 +1,5 @@
 diff --git a/third_party/webrtc/rtc_base/physical_socket_server.cc b/third_party/webrtc/rtc_base/physical_socket_server.cc
-index 9d9927e85b..3bb0d4568f 100644
+index 9d9927e85b..63f36293c8 100644
 --- a/third_party/webrtc/rtc_base/physical_socket_server.cc
 +++ b/third_party/webrtc/rtc_base/physical_socket_server.cc
 @@ -63,7 +63,7 @@
@@ -11,7 +11,32 @@ index 9d9927e85b..3bb0d4568f 100644
  #include <asm-generic/socket.h>
  #include <sys/epoll.h>
  #endif
-@@ -841,7 +841,8 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
+@@ -756,7 +756,8 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
+       *slevel = IPPROTO_IP;
+       *sopt = IP_DONTFRAGMENT;
+       break;
+-#elif defined(WEBRTC_MAC) || defined(BSD)
++#elif defined(WEBRTC_MAC) || defined(BSD) || !defined(IP_MTU_DISCOVER)
++      // GNU/Hurd defines the IP_PMTUDISC_* values but not the option.
+       RTC_LOG(LS_WARNING) << "Socket::OPT_DONTFRAGMENT not supported.";
+       return -1;
+ #elif defined(WEBRTC_POSIX)
+@@ -810,8 +811,14 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
+         *slevel = IPPROTO_IPV6;
+         *sopt = IPV6_RECVTCLASS;
+       } else {
++#if defined(IP_RECVTOS)
+         *slevel = IPPROTO_IP;
+         *sopt = IP_RECVTOS;
++#else
++        // E.g. GNU/Hurd.
++        RTC_LOG(LS_WARNING) << "Socket::OPT_RECV_ECN not supported.";
++        return -1;
++#endif
+       }
+       break;
+ #else
+@@ -841,7 +848,8 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
        *sopt = TCP_KEEPINTVL;
        break;
      case OPT_TCP_USER_TIMEOUT:

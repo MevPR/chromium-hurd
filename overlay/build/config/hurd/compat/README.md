@@ -13,6 +13,7 @@ be impractical:
   code and the seccomp-bpf SIGSYS handler (neither runs on the Hurd).
 * `sys/inotify.h`: inotify types; all functions fail with `ENOSYS`, which
   callers already handle (inotify can run out of instances on Linux too).
+* `linux/types.h`: the `__u8` … `__s64` fixed-width types.
 * `linux/netlink.h`, `linux/rtnetlink.h`, `linux/if_addr.h`: the netlink
   data structures used by `//net`'s address tracking. The Hurd has no
   netlink; `socket(AF_NETLINK, ...)` fails at runtime and
