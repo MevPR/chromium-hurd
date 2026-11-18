@@ -428,21 +428,24 @@ index d878fd30ef..f64956093f 100644
  
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 diff --git a/base/memory/protected_memory_posix.cc b/base/memory/protected_memory_posix.cc
-index 9e84b31e07..c25965ed3f 100644
+index 9e84b31e07..a9677c7934 100644
 --- a/base/memory/protected_memory_posix.cc
 +++ b/base/memory/protected_memory_posix.cc
-@@ -6,7 +6,9 @@
+@@ -6,7 +6,12 @@
  
  #include <sys/mman.h>
  
 -#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
 +#if BUILDFLAG(IS_HURD)
++// GNU Mach's headers lack C++ linkage specifications.
++extern "C" {
 +#include <mach.h>
++}
 +#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
  #include <sys/resource.h>
  #endif  // BUILDFLAG(IS_LINUX)
  
-@@ -34,7 +36,34 @@ bool SetMemory(void* start, void* end, int prot) {
+@@ -34,7 +39,34 @@ bool SetMemory(void* start, void* end, int prot) {
  }  // namespace
  
  namespace internal {

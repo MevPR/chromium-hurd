@@ -185,6 +185,55 @@ index b7f4349b5c..1475c1b43c 100644
  
  namespace sandbox {
  
+diff --git a/sandbox/linux/services/thread_helpers.cc b/sandbox/linux/services/thread_helpers.cc
+index 4e701ebd8b..401dc93594 100644
+--- a/sandbox/linux/services/thread_helpers.cc
++++ b/sandbox/linux/services/thread_helpers.cc
+@@ -36,6 +36,12 @@ const char kAssertThreadDoesNotDisappearInProcFS[] =
+ 
+ bool IsSingleThreadedImpl(int proc_fd) {
+   CHECK_LE(0, proc_fd);
++#if defined(__GNU__)
++  // There is no /proc/self/task on GNU/Hurd to count threads. Report
++  // "multi-threaded", the conservative answer (the sandbox that relies on
++  // this cannot engage on the Hurd anyway).
++  return false;
++#else
+   struct stat task_stat;
+   int fstat_ret = fstatat(proc_fd, "self/task/", &task_stat, 0);
+   PCHECK(0 == fstat_ret);
+@@ -46,6 +52,7 @@ bool IsSingleThreadedImpl(int proc_fd) {
+   // determining if the current proces is monothreaded it works: if at any
+   // time it becomes monothreaded, it'll stay so.
+   return task_stat.st_nlink == 3;
++#endif  // defined(__GNU__)
+ }
+ 
+ bool IsThreadPresentInProcFS(int proc_fd,
+@@ -115,6 +122,15 @@ bool ChangeThreadStateAndWatchProcFS(
+   DCHECK_LE(0, proc_fd);
+   DCHECK(thread);
+   DCHECK(action == ThreadAction::Start || action == ThreadAction::Stop);
++#if defined(__GNU__)
++  // GNU/Hurd's procfs has no per-thread (task/<tid>) entries to watch; the
++  // thread is started or joined, which is all that can be observed.
++  if (action == ThreadAction::Start) {
++    return thread->Start();
++  }
++  thread->Stop();
++  return true;
++#else
+ 
+   base::RepeatingCallback<bool(void)> cb;
+   const char* message;
+@@ -153,6 +169,7 @@ bool ChangeThreadStateAndWatchProcFS(
+             IsThreadPresentInProcFS(proc_fd, thread_id_dir_str));
+ 
+   return true;
++#endif  // defined(__GNU__)
+ }
+ 
+ }  // namespace
 diff --git a/sandbox/linux/syscall_broker/broker_file_permission.cc b/sandbox/linux/syscall_broker/broker_file_permission.cc
 index 64a22893b7..c6bf5ea220 100644
 --- a/sandbox/linux/syscall_broker/broker_file_permission.cc
