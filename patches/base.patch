@@ -240,6 +240,21 @@ index 8259520502..d0a3b1eb98 100644
  namespace {
  Lock g_tls_key_lock;
  }  // namespace
+diff --git a/base/debug/proc_maps_linux.cc b/base/debug/proc_maps_linux.cc
+index 826feb7629..cc40dd307a 100644
+--- a/base/debug/proc_maps_linux.cc
++++ b/base/debug/proc_maps_linux.cc
+@@ -223,7 +223,10 @@ std::optional<SmapsRollup> ReadAndParseSmapsRollup() {
+ 
+   base::ScopedFD fd(HANDLE_EINTR(open("/proc/self/smaps_rollup", O_RDONLY)));
+   if (!fd.is_valid()) {
++#if !BUILDFLAG(IS_HURD)
++    // The Hurd's procfs has no smaps_rollup; callers handle the failure.
+     DPLOG(ERROR) << "Couldn't open /proc/self/smaps_rollup";
++#endif
+     return std::nullopt;
+   }
+ 
 diff --git a/base/debug/stack_trace_posix.cc b/base/debug/stack_trace_posix.cc
 index d4b6111077..fb001e9b09 100644
 --- a/base/debug/stack_trace_posix.cc
@@ -1223,6 +1238,29 @@ index 70252d7230..e08f4d1a6d 100644
  }
  }  // namespace subtle
  
+diff --git a/base/trace_event/process_memory_dump.cc b/base/trace_event/process_memory_dump.cc
+index 659dda87a8..fb5224818f 100644
+--- a/base/trace_event/process_memory_dump.cc
++++ b/base/trace_event/process_memory_dump.cc
+@@ -98,6 +98,10 @@ std::optional<size_t> ProcessMemoryDump::CountResidentBytes(
+     return 0;
+   }
+ 
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd does not implement mincore(); residency is unknown.
++  return std::nullopt;
++#else
+   const size_t page_size = GetSystemPageSize();
+   const uintptr_t start_pointer = reinterpret_cast<uintptr_t>(start_address);
+   const uintptr_t aligned_start =
+@@ -208,6 +212,7 @@ std::optional<size_t> ProcessMemoryDump::CountResidentBytes(
+   }
+ 
+   return total_resident_bytes;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ // static
 diff --git a/base/tracing/trace_time.cc b/base/tracing/trace_time.cc
 index 86221ee3bb..4b2a081d0a 100644
 --- a/base/tracing/trace_time.cc
