@@ -259,10 +259,17 @@ index 486f8f93b2..a56fa80b60 100644
    return drive_info;
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 diff --git a/base/files/file_path_watcher_stub.cc b/base/files/file_path_watcher_stub.cc
-index a29f53cdc3..60ecd33809 100644
+index a29f53cdc3..73e179c548 100644
 --- a/base/files/file_path_watcher_stub.cc
 +++ b/base/files/file_path_watcher_stub.cc
-@@ -13,6 +13,7 @@
+@@ -8,11 +8,14 @@
+ 
+ #include "base/files/file_path_watcher.h"
+ 
++#include <stddef.h>
++
+ #include <memory>
+ 
  #include "base/check.h"
  #include "base/notimplemented.h"
  #include "base/task/sequenced_task_runner.h"
@@ -270,7 +277,7 @@ index a29f53cdc3..60ecd33809 100644
  
  namespace base {
  
-@@ -42,4 +43,11 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
+@@ -42,4 +45,19 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
  FilePathWatcher::FilePathWatcher()
      : FilePathWatcher(std::make_unique<FilePathWatcherImpl>()) {}
  
@@ -280,6 +287,14 @@ index a29f53cdc3..60ecd33809 100644
 +  return false;
 +}
 +#endif  // BUILDFLAG(IS_LINUX)
++
++#if BUILDFLAG(IS_HURD)
++// Declared in file_path_watcher_inotify.h, which Linux-specific callers use.
++// GNU/Hurd has no inotify, so no watches are available.
++size_t GetMaxNumberOfInotifyWatches() {
++  return 0;
++}
++#endif  // BUILDFLAG(IS_HURD)
 +
  }  // namespace base
 diff --git a/base/files/file_posix.cc b/base/files/file_posix.cc

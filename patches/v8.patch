@@ -50,6 +50,19 @@ index b7aeeade6b..19ea5dd0c2 100644
  #elif defined(__sun)
  # define V8_OS_POSIX 1
  # define V8_OS_SOLARIS 1
+diff --git a/v8/src/api/api.cc b/v8/src/api/api.cc
+index a858e0a140..e2a4dda619 100644
+--- a/v8/src/api/api.cc
++++ b/v8/src/api/api.cc
+@@ -6532,7 +6532,7 @@ bool v8::V8::Initialize(const int build_config) {
+   return true;
+ }
+ 
+-#if V8_OS_LINUX || V8_OS_DARWIN
++#if V8_OS_LINUX || V8_OS_DARWIN || V8_OS_HURD
+ bool TryHandleWebAssemblyTrapPosix(int sig_code, siginfo_t* info,
+                                    void* context) {
+ #if V8_ENABLE_WEBASSEMBLY && V8_TRAP_HANDLER_SUPPORTED
 diff --git a/v8/src/base/platform/platform-posix.cc b/v8/src/base/platform/platform-posix.cc
 index 7add12aa47..a0cbcb630f 100644
 --- a/v8/src/base/platform/platform-posix.cc
