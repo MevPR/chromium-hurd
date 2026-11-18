@@ -83,10 +83,22 @@ index a858e0a140..4dee751e96 100644
                                     void* context) {
  #if V8_ENABLE_WEBASSEMBLY && V8_TRAP_HANDLER_SUPPORTED
 diff --git a/v8/src/base/platform/platform-posix.cc b/v8/src/base/platform/platform-posix.cc
-index 7add12aa47..a0cbcb630f 100644
+index 7add12aa47..748cbca074 100644
 --- a/v8/src/base/platform/platform-posix.cc
 +++ b/v8/src/base/platform/platform-posix.cc
-@@ -919,6 +919,9 @@ int OS::GetCurrentProcessId() {
+@@ -655,6 +655,11 @@ bool OS::DiscardSystemPages(void* address, size_t size) {
+   if (ret != 0 && errno == EINVAL) {
+     ret = madvise(reinterpret_cast<caddr_t>(address), size, MADV_DONTNEED);
+   }
++#elif V8_OS_HURD
++  // GNU/Hurd's madvise() does not implement MADV_DONTNEED. Discarding is only
++  // a hint, so not discarding is correct.
++  madvise(address, size, MADV_DONTNEED);
++  int ret = 0;
+ #else
+   int ret = madvise(address, size, MADV_DONTNEED);
+ #endif
+@@ -919,6 +924,9 @@ int OS::GetCurrentProcessId() {
  int OS::GetCurrentThreadIdInternal() {
  #if V8_OS_DARWIN || (V8_OS_ANDROID && defined(__APPLE__))
    return static_cast<int>(pthread_mach_thread_np(pthread_self()));
@@ -96,7 +108,7 @@ index 7add12aa47..a0cbcb630f 100644
  #elif V8_OS_LINUX
    return static_cast<int>(syscall(__NR_gettid));
  #elif V8_OS_ANDROID
-@@ -1229,7 +1232,12 @@ Thread::Thread(const Options& options)
+@@ -1229,7 +1237,12 @@ Thread::Thread(const Options& options)
        stack_size_(options.stack_size()),
        priority_(options.priority()),
        start_semaphore_(nullptr) {
@@ -109,7 +121,7 @@ index 7add12aa47..a0cbcb630f 100644
    if (stack_size_ > 0) stack_size_ = std::max(stack_size_, min_stack_size);
    set_name(options.name());
  }
-@@ -1245,6 +1253,8 @@ static void SetThreadName(const char* name) {
+@@ -1245,6 +1258,8 @@ static void SetThreadName(const char* name) {
  #elif V8_OS_NETBSD
    static_assert(Thread::kMaxThreadNameLength <= PTHREAD_MAX_NAMELEN_NP);
    pthread_setname_np(pthread_self(), "%s", name);

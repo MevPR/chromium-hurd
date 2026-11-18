@@ -5,6 +5,7 @@ v8.patch
 buildtools.patch
 chrome.patch
 components.patch
+content.patch
 media.patch
 mojo.patch
 net.patch

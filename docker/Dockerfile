@@ -12,7 +12,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
       libdrm-dev libcups2-dev libpulse-dev libkrb5-dev libpci-dev \
       libxshmfence-dev libxtst-dev libxrandr-dev libxdamage-dev \
       libxcomposite-dev libgbm-dev libasound2-dev libudev-dev \
-      ninja-build nodejs pkg-config python3 python3-setuptools \
+      ninja-build nodejs patchelf pkg-config python3 python3-setuptools \
       qemu-utils xz-utils zstd \
     && rm -rf /var/lib/apt/lists/*
 

@@ -15,10 +15,25 @@ index ffbbd8cad5..34fa636e1a 100644
  
    if (is_ios) {
 diff --git a/components/crash/core/app/crashpad_linux.cc b/components/crash/core/app/crashpad_linux.cc
-index 879b0a5d1e..f9c5e7d809 100644
+index 879b0a5d1e..51b386a6ed 100644
 --- a/components/crash/core/app/crashpad_linux.cc
 +++ b/components/crash/core/app/crashpad_linux.cc
-@@ -142,6 +142,12 @@ bool PlatformCrashpadInitialization(
+@@ -113,8 +113,14 @@ void InformCrashReporterThatCrashpadIsReady() {
+ void SetFirstChanceExceptionHandler(bool (*handler)(int, siginfo_t*, void*)) {
+   DCHECK(!g_first_chance_handler);
+   g_first_chance_handler = handler;
++#if BUILDFLAG(IS_HURD)
++  // Crashpad is not initialized on GNU/Hurd (see
++  // PlatformCrashpadInitialization()), so there is no signal handler to chain
++  // to. The only user, V8's WebAssembly trap handler, is unsupported there.
++#else
+   crashpad::CrashpadClient::SetFirstChanceExceptionHandler(
+       FirstChanceHandlerHelper);
++#endif
+ }
+ 
+ bool GetHandlerSocket(int* fd, pid_t* pid) {
+@@ -142,6 +148,12 @@ bool PlatformCrashpadInitialization(
      const std::vector<std::string>& initial_arguments,
      const std::vector<base::FilePath>& attachments,
      base::FilePath* database_path) {
@@ -31,7 +46,7 @@ index 879b0a5d1e..f9c5e7d809 100644
    DCHECK_EQ(initial_client, browser_process);
    DCHECK(initial_arguments.empty());
  
-@@ -304,6 +310,7 @@ bool PlatformCrashpadInitialization(
+@@ -304,6 +316,7 @@ bool PlatformCrashpadInitialization(
  #endif
  
    return true;

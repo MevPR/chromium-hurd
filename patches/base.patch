@@ -76,6 +76,21 @@ index 7824c66ab7..77a776f9af 100644
  #include <sys/prctl.h>
  
  #if (PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)) && \
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/page_allocator.h b/base/allocator/partition_allocator/src/partition_alloc/page_allocator.h
+index 0711808209..3583a1bdda 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/page_allocator.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/page_allocator.h
+@@ -279,7 +279,9 @@ bool DecommitAndZeroSystemPages(void* address,
+ // recommitted. Do not assume that this will not change over time.
+ constexpr PA_COMPONENT_EXPORT(
+     PARTITION_ALLOC) bool DecommittedMemoryIsAlwaysZeroed() {
+-#if PA_BUILDFLAG(IS_APPLE)
++#if PA_BUILDFLAG(IS_APPLE) || PA_BUILDFLAG(IS_HURD)
++  // GNU/Hurd's madvise() cannot discard pages (see
++  // DiscardSystemPagesInternal()), so decommitted memory keeps its contents.
+   return false;
+ #else
+   return true;
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h b/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
 index 2c35ada4f8..0991e376d1 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
@@ -710,7 +725,7 @@ index 99427d5301..d8e32b4637 100644
  
  // This function runs on the stack specified on the clone call. It uses longjmp
 diff --git a/base/process/process_linux.cc b/base/process/process_linux.cc
-index 2618b503db..b001ff439b 100644
+index 2618b503db..6295c003a7 100644
 --- a/base/process/process_linux.cc
 +++ b/base/process/process_linux.cc
 @@ -5,7 +5,11 @@
@@ -742,6 +757,20 @@ index 2618b503db..b001ff439b 100644
  }
  
  struct CGroups {
+@@ -198,7 +207,13 @@ bool Process::SetPriority(Priority priority) {
+                                                          : kForegroundPriority;
+   int result =
+       setpriority(PRIO_PROCESS, static_cast<id_t>(process_), priority_value);
++#if BUILDFLAG(IS_HURD)
++  // GNU/Hurd may refuse to change another task's priority (EIEIO); treat it
++  // like any platform that cannot set process priorities.
++  DPLOG_IF(WARNING, result != 0) << "setpriority";
++#else
+   DPCHECK(result == 0);
++#endif
+   return result == 0;
+ }
+ 
 diff --git a/base/profiler/stack_copier_signal.cc b/base/profiler/stack_copier_signal.cc
 index 62ab1c02f7..facad1a070 100644
 --- a/base/profiler/stack_copier_signal.cc

@@ -1,0 +1,15 @@
+diff --git a/content/browser/child_process_host_impl.cc b/content/browser/child_process_host_impl.cc
+index 6bc72f9962..228819a2f3 100644
+--- a/content/browser/child_process_host_impl.cc
++++ b/content/browser/child_process_host_impl.cc
+@@ -72,7 +72,9 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
+     }
+   }
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++// Not on GNU/Hurd: there, a process started through /proc/self/exe sees
++// "/proc/self/exe" as its own executable path and cannot find its resources.
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   // Use /proc/self/exe rather than our known binary path so updates
+   // can't swap out the binary from underneath us.
+   if (flags & CHILD_ALLOW_SELF) {
