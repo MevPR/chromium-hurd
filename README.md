@@ -20,13 +20,13 @@ in QEMU, upgraded with `apt-get update && apt-get dist-upgrade`).
    [latest release](https://github.com/MevPR/chromium-hurd/releases/latest):
 
    ```sh
-   wget https://github.com/MevPR/chromium-hurd/releases/download/v157.0.8103.78-0hurd1/chromium_157.0.8103.78-0hurd1_hurd-amd64.deb
+   wget https://github.com/MevPR/chromium-hurd/releases/download/v157.0.8103.78-0hurd2/chromium_157.0.8103.78-0hurd2_hurd-amd64.deb
    ```
 
 2. Install it; apt pulls in the required libraries:
 
    ```sh
-   apt-get install ./chromium_157.0.8103.78-0hurd1_hurd-amd64.deb
+   apt-get install ./chromium_157.0.8103.78-0hurd2_hurd-amd64.deb
    ```
 
 3. Start it from an X11 session:

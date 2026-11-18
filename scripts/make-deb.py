@@ -26,7 +26,7 @@ PACKAGE = 'chromium'
 ARCH = 'hurd-amd64'
 LIBDIR = 'usr/lib/chromium'
 MAINTAINER = 'Magnus Reimann <magnus.reimann@mailbox.org>'
-DEBIAN_REVISION = '0hurd1'
+DEBIAN_REVISION = '0hurd2'
 
 # Files copied from out/hurd into LIBDIR besides chrome itself.
 RESOURCES = [

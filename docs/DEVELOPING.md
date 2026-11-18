@@ -113,7 +113,7 @@ WebGL with `--use-angle=swiftshader --enable-unsafe-swiftshader`:
 
 ## Debian package
 
-`scripts/make-deb.py` packs the build as `chromium_<version>-0hurd1_hurd-amd64.deb`
+`scripts/make-deb.py` packs the build as `chromium_<version>-0hurd<N>_hurd-amd64.deb`
 (installed into `/usr/lib/chromium`, started via `/usr/bin/chromium`). Its
 Depends are derived from the DT_NEEDED entries of the shipped ELF files and
 the sysroot packages providing them, so the package targets a system that

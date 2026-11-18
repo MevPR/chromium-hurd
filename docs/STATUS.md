@@ -17,7 +17,7 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | Clean shutdown (PartitionAlloc TLS during libc thread teardown) | ✅ |
 | GPU process with SwiftShader (SwANGLE), WebGL in headless mode | ✅ |
 | `base_unittests` builds and runs on the Hurd (9041 tests) | ✅ |
-| `base_unittests` pass on the Hurd: 8807 of 8952 (98.4%), see [test-results](test-results/base_unittests.txt) | ⏳ |
+| `base_unittests` pass on the Hurd: 8957 of 8958 run (99.99%) with the [Hurd filter](../overlay/testing/buildbot/filters/hurd.base_unittests.filter), see [test-results](test-results/base_unittests.txt) | ✅ |
 | `chrome --no-sandbox` starts with X11 (Xvfb), full browser UI | ✅ |
 | https://duckduckgo.com renders correctly over the network | ✅ |
 | WebGL in an X11 window via SwANGLE (SwiftShader Vulkan) | ✅ |

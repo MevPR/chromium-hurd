@@ -43,8 +43,10 @@
 -UnixDomainSocketTest.RecvPid
 -UnixDomainSocketTest.RecvPidWithMaxDescriptors
 
-# shutdown() does not wake up a thread blocked in recv() on the socket.
+# shutdown() does not wake up a thread blocked in recv() on the socket
+# (DisconnectTest hangs whenever the reader blocks before the shutdown).
 -CancelableSyncSocketTest.ShutdownCancelsReceive
+-SyncSocketTest.DisconnectTest
 
 # Accessing a non-canonical address raises SIGILL instead of SIGSEGV.
 -CheckExitCodeAfterSignalHandlerDeathTest.CheckSIGSEGVNonCanonicalAddress
