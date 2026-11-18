@@ -35,10 +35,19 @@ Useful intermediate targets, in order of size: `base`, `check_example`
 
 ## Testing on the Hurd
 
-Boot the Debian GNU/Hurd amd64 image in QEMU (see `scripts/run-vm.sh`), copy
-`out/hurd` over SSH (port 2222 on the host) and run binaries there. The image
-must be upgraded to unstable (`apt full-upgrade`) because the sysroot is built
-from unstable and binaries require the matching glibc.
+Boot the Debian GNU/Hurd amd64 image in QEMU (see `scripts/run-vm.sh`) and
+copy a test bundle over SSH (port 2222 on the host):
+
+```sh
+scripts/make-test-bundle.sh "$SRC" "$WORK/sysroot-hurd-amd64" bundle.tar.gz
+# on the Hurd:
+mkdir -p /opt/chromium && tar xzf bundle.tar.gz -C /opt/chromium
+/opt/chromium/run-chrome --version
+```
+
+The bundle carries the sysroot's glibc, dynamic linker and libraries, so it
+runs on systems with older installed libraries (the sysroot is built from
+unstable). `run-chrome` adds `--no-sandbox --no-zygote`.
 
 On Apple Silicon, use an AHCI disk (`-device ahci`); the Hurd's rumpdisk
 reports I/O errors on QEMU's emulated PIIX IDE controller under TCG.
