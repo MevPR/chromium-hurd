@@ -15,6 +15,43 @@ index f1d133b6cd..ebd408e7fb 100644
  
        ldflags = []
  
+diff --git a/chrome/browser/media/router/discovery/discovery_network_list_posix.cc b/chrome/browser/media/router/discovery/discovery_network_list_posix.cc
+index 259b4d17bb..ce4ad2a65e 100644
+--- a/chrome/browser/media/router/discovery/discovery_network_list_posix.cc
++++ b/chrome/browser/media/router/discovery/discovery_network_list_posix.cc
+@@ -21,7 +21,9 @@
+ #include "chrome/browser/media/router/discovery/discovery_network_list_wifi.h"
+ #endif
+ 
+-#if !BUILDFLAG(IS_MAC)
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd reports no link-layer (AF_PACKET) addresses.
++#elif !BUILDFLAG(IS_MAC)
+ #include <netpacket/packet.h>
+ #else
+ #include <net/if_dl.h>
+@@ -30,6 +32,13 @@
+ namespace media_router {
+ namespace {
+ 
++#if BUILDFLAG(IS_HURD)
++void GetDiscoveryNetworkInfoListImpl(
++    const struct ifaddrs* if_list,
++    std::vector<DiscoveryNetworkInfo>* network_info_list) {
++  // Without link-layer addresses there are no discovery networks to report.
++}
++#else  // BUILDFLAG(IS_HURD)
+ #if !BUILDFLAG(IS_MAC)
+ using sll = struct sockaddr_ll;
+ #define SOCKET_ARP_TYPE(s) ((s)->sll_hatype)
+@@ -99,6 +108,7 @@ void GetDiscoveryNetworkInfoListImpl(
+         {name, base::HexEncode(SocketAddressAsByteSpan(ll_addr))});
+   }
+ }
++#endif  // BUILDFLAG(IS_HURD)
+ 
+ }  // namespace
+ 
 diff --git a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc b/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc
 index 303091b905..67a222a4fe 100644
 --- a/chrome/browser/media/router/discovery/discovery_network_list_wifi_linux.cc

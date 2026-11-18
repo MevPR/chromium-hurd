@@ -43,6 +43,7 @@ libgl-dev
 libegl-dev
 libgles-dev
 mesa-common-dev
+libvulkan-dev
 
 # Toolkit / text
 libgtk-3-dev

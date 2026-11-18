@@ -234,6 +234,21 @@ index 29683e05ff..ab92480d7a 100644
    return EnergyMetricsProviderLinux::Create();
  #else
    return nullptr;
+diff --git a/components/sync_device_info/local_device_info_util_linux.cc b/components/sync_device_info/local_device_info_util_linux.cc
+index cf65cf4759..7fb0a79414 100644
+--- a/components/sync_device_info/local_device_info_util_linux.cc
++++ b/components/sync_device_info/local_device_info_util_linux.cc
+@@ -12,6 +12,10 @@
+ namespace syncer {
+ 
+ std::string GetPersonalizableDeviceNameInternal() {
++#if !defined(HOST_NAME_MAX)
++  // GNU/Hurd has no fixed host name limit; use the Linux value.
++  constexpr int HOST_NAME_MAX = 64;
++#endif
+   char hostname[HOST_NAME_MAX];
+   if (gethostname(hostname, HOST_NAME_MAX) == 0) {  // Success.
+     // Many Linux installations default to "localhost" or
 diff --git a/components/variations/field_trial_config/BUILD.gn b/components/variations/field_trial_config/BUILD.gn
 index ae6d8ef5a5..c25657af39 100644
 --- a/components/variations/field_trial_config/BUILD.gn
