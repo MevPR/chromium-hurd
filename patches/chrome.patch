@@ -116,3 +116,36 @@ index eb6ee80802..4a54ad05c8 100644
    }
  
    result.dir_path = dir_path;
+diff --git a/chrome/browser/obsolete_system/obsolete_system_linux.cc b/chrome/browser/obsolete_system/obsolete_system_linux.cc
+index fcd51c9f79..58ce98c7ac 100644
+--- a/chrome/browser/obsolete_system/obsolete_system_linux.cc
++++ b/chrome/browser/obsolete_system/obsolete_system_linux.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/linux_util.h"
+ #include "base/strings/string_util.h"
++#include "build/build_config.h"
+ #include "chrome/grit/branded_strings.h"
+ #include "ui/base/l10n/l10n_util.h"
+ 
+@@ -42,6 +43,12 @@ const char* const kObsoleteDistros[] = {
+ namespace ObsoleteSystem {
+ 
+ bool IsObsoleteNowOrSoon() {
++#if BUILDFLAG(IS_HURD)
++  // The list above names Linux distributions. Skipping the lookup also avoids
++  // reading /etc/os-release on the UI thread if the background task that
++  // caches it (ChromeBrowserMainPartsLinux) has not finished yet.
++  return false;
++#else
+   auto distro = base::GetLinuxDistro();
+   for (const char* obsolete : kObsoleteDistros) {
+     if (base::StartsWith(distro, obsolete)) {
+@@ -49,6 +56,7 @@ bool IsObsoleteNowOrSoon() {
+     }
+   }
+   return false;
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ std::u16string LocalizedObsoleteString() {

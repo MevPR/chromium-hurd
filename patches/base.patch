@@ -1101,17 +1101,72 @@ index 2c34251a84..4cbb03d873 100644
    // Workaround false-positive MSAN use-of-uninitialized-value on
    // thread_local storage for loaded libraries:
 diff --git a/base/time/time_now_posix.cc b/base/time/time_now_posix.cc
-index 70252d7230..968644c5ec 100644
+index 70252d7230..e08f4d1a6d 100644
 --- a/base/time/time_now_posix.cc
 +++ b/base/time/time_now_posix.cc
-@@ -147,7 +147,13 @@ namespace subtle {
+@@ -7,6 +7,8 @@
+ #include <time.h>
+ #include <unistd.h>
+ 
++#include <algorithm>
++#include <atomic>
+ #include <optional>
+ 
+ #include "base/check.h"
+@@ -69,6 +71,21 @@ std::optional<int64_t> MaybeClockNow(clockid_t clk_id) {
+ #error No usable tick clock function on this platform.
+ #endif  // _POSIX_MONOTONIC_CLOCK
+ 
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd's CLOCK_MONOTONIC follows GNU Mach's host clock, which can step
++// backwards slightly (e.g. when a virtual machine's clock is resynchronized).
++// TimeTicks must never decrease, so clamp to the largest value returned so far
++// in this process.
++int64_t MonotonicClockNow(int64_t now) {
++  static std::atomic<int64_t> g_last_now{0};
++  int64_t last = g_last_now.load(std::memory_order_relaxed);
++  while (now > last && !g_last_now.compare_exchange_weak(
++                           last, now, std::memory_order_relaxed)) {
++  }
++  return std::max(now, last);
++}
++#endif  // BUILDFLAG(IS_HURD)
++
+ }  // namespace
+ 
+ namespace base {
+@@ -98,13 +115,22 @@ Time TimeNowFromSystemTimeIgnoringOverride() {
+ 
+ namespace subtle {
+ TimeTicks TimeTicksNowIgnoringOverride() {
++#if BUILDFLAG(IS_HURD)
++  return TimeTicks() +
++         Microseconds(MonotonicClockNow(ClockNow(CLOCK_MONOTONIC)));
++#else
+   return TimeTicks() + Microseconds(ClockNow(CLOCK_MONOTONIC));
++#endif
+ }
+ 
+ std::optional<TimeTicks> MaybeTimeTicksNowIgnoringOverride() {
+   std::optional<int64_t> now = MaybeClockNow(CLOCK_MONOTONIC);
+   if (now.has_value()) {
++#if BUILDFLAG(IS_HURD)
++    return TimeTicks() + Microseconds(MonotonicClockNow(now.value()));
++#else
+     return TimeTicks() + Microseconds(now.value());
++#endif
+   }
+   return std::nullopt;
+ }
+@@ -147,7 +173,14 @@ namespace subtle {
  // ChromeOS, and Android). Apple platforms use an alternate implementation in
  // time_apple.mm.
  time_internal::RealTicks RealTicksNowIgnoringOverride() {
 +#if BUILDFLAG(IS_HURD)
 +  // GNU/Hurd has no CLOCK_BOOTTIME. It does not suspend either, so
 +  // CLOCK_MONOTONIC counts the same time.
-+  return time_internal::RealTicks() + Microseconds(ClockNow(CLOCK_MONOTONIC));
++  return time_internal::RealTicks() +
++         Microseconds(MonotonicClockNow(ClockNow(CLOCK_MONOTONIC)));
 +#else
    return time_internal::RealTicks() + Microseconds(ClockNow(CLOCK_BOOTTIME));
 +#endif
