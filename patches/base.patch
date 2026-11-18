@@ -176,7 +176,7 @@ index 58b66e834a..2bc248f314 100644
  // Need TLS support.
  #define PA_CONFIG_THREAD_CACHE_SUPPORTED() \
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
-index 0093fad69b..24723a9ce4 100644
+index 0093fad69b..d62392a3e6 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
 +++ b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
 @@ -71,7 +71,9 @@ constexpr inline size_t kThreadCacheStorageSize =
@@ -190,49 +190,56 @@ index 0093fad69b..24723a9ce4 100644
  #else
  constexpr inline size_t kThreadCacheStorageSize =
      960 + (PA_CONFIG(THREAD_CACHE_ALLOC_STATS) ? 960 : 0);
-diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
-index 8259520502..9f820457c6 100644
---- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
-+++ b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
-@@ -23,6 +23,16 @@ std::atomic<PartitionTlsKey> g_tls_key{kInvalidTlsKey};
+@@ -141,8 +143,22 @@ PA_ALWAYS_INLINE void* FastTlsGet(PartitionTlsKey index) {
  
- namespace {
- Lock g_tls_key_lock;
-+
+ #endif  // PA_BUILDFLAG(IS_MAC) && PA_BUILDFLAG(PA_ARCH_CPU_X86_64)
+ 
 +#if PA_BUILDFLAG(IS_HURD)
-+// GNU/Hurd's libpthread clears every value before calling its destructor,
-+// round after round, so the tombstone set by TlsDestructor() is erased again.
-+// Allocations made later during thread exit (including libpthread freeing its
-+// own thread-specific array) would then create a new PartitionTls, writing
-+// into that array while it is being freed. Remember the teardown in static
-+// TLS, which stays valid until the thread is gone.
-+thread_local bool g_tls_torn_down = false;
++// GNU/Hurd's libpthread keeps thread-specific values in a heap array that it
++// clears value by value during thread exit and finally free()s, with
++// PartitionAlloc as malloc. Reading the value through pthread_getspecific()
++// there returns erased tombstones, and even reads the array while it is being
++// freed. PartitionAlloc only has one key, so mirror its value in static TLS,
++// which stays valid until the thread is gone, and read only the mirror. The
++// key is still set so that the destructor runs.
++PA_COMPONENT_EXPORT(PARTITION_ALLOC)
++extern thread_local void* g_partition_tls_value;
 +#endif
- }  // namespace
- 
- void EnsureThreadSpecificDataInitialized() {
-@@ -41,6 +51,11 @@ void EnsureThreadSpecificDataInitialized() {
++
+ PA_ALWAYS_INLINE void* PartitionTlsGet(PartitionTlsKey key) {
+-#if PA_BUILDFLAG(IS_MAC) && PA_BUILDFLAG(PA_ARCH_CPU_X86_64)
++#if PA_BUILDFLAG(IS_HURD)
++  return g_partition_tls_value;
++#elif PA_BUILDFLAG(IS_MAC) && PA_BUILDFLAG(PA_ARCH_CPU_X86_64)
+   PA_DCHECK(pthread_getspecific(key) == FastTlsGet(key));
+   return FastTlsGet(key);
+ #else
+@@ -151,6 +167,9 @@ PA_ALWAYS_INLINE void* PartitionTlsGet(PartitionTlsKey key) {
  }
  
- PartitionTls* GetTlsSlowPath() {
+ PA_ALWAYS_INLINE void PartitionTlsSet(PartitionTlsKey key, void* value) {
 +#if PA_BUILDFLAG(IS_HURD)
-+  if (g_tls_torn_down) {
-+    return nullptr;
-+  }
++  g_partition_tls_value = value;
 +#endif
-   EnsureThreadSpecificDataInitialized();
-   PartitionTlsKey key = GetTlsKey();
-   if (key == kInvalidTlsKey) {
-@@ -65,6 +80,9 @@ void TlsDestructor(void* value) {
-   }
-   auto* tls = static_cast<PartitionTls*>(value);
+   int ret = pthread_setspecific(key, value);
+   PA_DCHECK(!ret);
+ }
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
+index 8259520502..d0a3b1eb98 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
+@@ -21,6 +21,11 @@ namespace partition_alloc::internal {
+ PA_COMPONENT_EXPORT(PARTITION_ALLOC)
+ std::atomic<PartitionTlsKey> g_tls_key{kInvalidTlsKey};
  
 +#if PA_BUILDFLAG(IS_HURD)
-+  g_tls_torn_down = true;
++PA_COMPONENT_EXPORT(PARTITION_ALLOC)
++thread_local void* g_partition_tls_value = nullptr;
 +#endif
-   PartitionTlsKey key = GetTlsKey();
-   if (key != kInvalidTlsKey) {
-     PartitionTlsSet(key, reinterpret_cast<void*>(kTombstone));
++
+ namespace {
+ Lock g_tls_key_lock;
+ }  // namespace
 diff --git a/base/debug/stack_trace_posix.cc b/base/debug/stack_trace_posix.cc
 index d4b6111077..fb001e9b09 100644
 --- a/base/debug/stack_trace_posix.cc
