@@ -100,14 +100,25 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
 * `/proc/<pid>/exe` records the path used for `exec()`. A process started via
   `/proc/self/exe` therefore sees that literal path; child processes are
   launched with the real executable path instead.
-* procfs has no `task/<tid>` entries and `maps` shows memory objects instead
-  of file names.
+* procfs has no `task/<tid>` or `fd/` entries, and `maps` shows memory
+  objects instead of file names. In-process stack symbolization therefore
+  lists modules with `dl_iterate_phdr()`. Thread ids are not process ids, so
+  `/proc/<thread id>` names an unrelated process.
+* The start time in `/proc/<pid>/stat` counts clock ticks since the Unix
+  epoch, not since boot.
+* While a process is being `exec()`'d, reads of its procfs files fail with
+  `EIO`; `internal::ReadProcFile()` retries.
 * `getrlimit()` and similar calls write their results from user space, so
   "pass a read-only buffer and expect `EFAULT`" probes crash. Query Mach
   (`vm_region()`) instead.
 * `madvise(MADV_DONTNEED)` is not implemented: discarded pages keep their
   contents (PartitionAlloc's `DecommittedMemoryIsAlwaysZeroed()` is false).
 * `CLOCK_MONOTONIC` can step backwards slightly; `TimeTicks` is clamped.
+* GNU Mach counts timeouts in clock ticks and may end `nanosleep()` or a timed
+  wait up to one tick (10 ms) early. `PlatformThread::Sleep()` and
+  `CancelableEvent::TimedWait()` wait again for the rest.
+* Write-only pages (`PROT_WRITE` without `PROT_READ`) are inaccessible.
+* `posix_fadvise()` and `mincore()` are stubs.
 * General protection faults (e.g. non-canonical pointers) arrive as
   `SIGILL`, not `SIGSEGV`.
 * Error numbers start at `0x40000000`.
@@ -116,6 +127,9 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
 * ANGLE loads Chromium's own `libvulkan.so.1` from the module directory; a
   bundle must ship it next to `libvk_swiftshader.so` and
   `vk_swiftshader_icd.json`, otherwise the GPU process cannot start SwANGLE.
+* Rust code that registers static constructors through `small_ctor` needs
+  `target_os = "hurd"` in that crate's list of `.init_array` targets;
+  otherwise the constructors (e.g. Rust gtest registration) silently vanish.
 * There is no parent-death signal (`PR_SET_PDEATHSIG`);
   `LaunchOptions::kill_on_parent_death` is ignored.
 * `syscall()`, `sched_getaffinity()`, `pthread_setschedparam()` and others are

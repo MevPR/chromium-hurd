@@ -57,6 +57,30 @@ Headless rendering:
   'data:text/html,<h1>Hello</h1>'
 ```
 
+### Unit tests
+
+`base_unittests` needs its runtime data next to it: copy the files listed in
+`out/hurd/base_unittests.runtime_deps` (test binaries and shared libraries,
+`gen/`, `base/test/data`, `test_fonts`, `icudtl.dat`), keeping the paths
+relative to `out/hurd`. Strip only debug info (`llvm-strip --strip-debug`)
+so that stack traces can still be symbolized. Then run it as an
+unprivileged user (several file tests assume that permissions are enforced)
+with a UTF-8 locale, and start it by its absolute path, because
+`/proc/self/exe` records the path used for `exec()` and the tests locate
+their data from it:
+
+```sh
+cd /home/tester/bu/out/hurd
+LANG=en_US.UTF-8 /home/tester/bu/out/hurd/base_unittests \
+  --test-launcher-jobs=1 \
+  --test-launcher-filter-file=hurd.base_unittests.filter
+```
+
+[`hurd.base_unittests.filter`](../overlay/testing/buildbot/filters/hurd.base_unittests.filter)
+excludes tests of Linux kernel interfaces the Hurd lacks, with the reason for
+each. Avoid tests that grow files to several GiB: ext2fs allocates them,
+which takes very long in an emulator.
+
 ### X11
 
 Xorg on the Hurd needs the console's keyboard and does not start from an SSH
