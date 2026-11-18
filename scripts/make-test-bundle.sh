@@ -30,10 +30,10 @@ patchelf --set-interpreter "$PREFIX/lib/ld-x86-64.so.1" \
   --force-rpath --set-rpath "$PREFIX/lib:$PREFIX" "$STAGE/chrome"
 for f in "$BUILD"/*.pak "$BUILD"/icudtl.dat "$BUILD"/*.bin \
          "$BUILD"/libEGL.so "$BUILD"/libGLESv2.so "$BUILD"/libvk_swiftshader.so \
-         "$BUILD"/vk_swiftshader_icd.json; do
+         "$BUILD"/libvulkan.so.1 "$BUILD"/vk_swiftshader_icd.json; do
   [ -e "$f" ] || continue
   case "$f" in
-    *.so) "$STRIP" --strip-debug -o "$STAGE/$(basename "$f")" "$f" ;;
+    *.so|*.so.1) "$STRIP" --strip-debug -o "$STAGE/$(basename "$f")" "$f" ;;
     *) cp "$f" "$STAGE/" ;;
   esac
 done
@@ -48,9 +48,11 @@ cp -a "$SYSROOT"/usr/lib/x86_64-gnu/*.so "$SYSROOT"/usr/lib/x86_64-gnu/*.so.* \
 cat > "$STAGE/run-chrome" <<'EOF'
 #!/bin/sh
 # chrome uses the bundled dynamic linker and libraries (ELF interpreter and
-# RPATH); the port needs these flags for now.
+# RPATH); the port needs these flags for now. Under QEMU without KVM a child
+# process can take longer than the default 15 s to receive the browser's first
+# IPC reply and would then terminate itself, so the timeout is raised.
 HERE=$(cd "$(dirname "$0")" && pwd)
-exec "$HERE/chrome" --no-sandbox --no-zygote "$@"
+exec "$HERE/chrome" --no-sandbox --no-zygote --ipc-connection-timeout=120 "$@"
 EOF
 chmod +x "$STAGE/run-chrome"
 

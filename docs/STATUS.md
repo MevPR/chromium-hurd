@@ -14,7 +14,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | `chrome` compiles and links (ELF for GNU/Hurd) | ✅ |
 | `chrome --version` runs on Debian GNU/Hurd | ✅ |
 | `chrome --headless --dump-dom` renders a page (browser, renderer, network and GPU processes, Mojo, Blink) | ✅ |
-| Clean shutdown (PartitionAlloc thread cache crash during thread teardown) | ⏳ |
+| Clean shutdown (PartitionAlloc TLS during libc thread teardown) | ✅ |
+| GPU process with SwiftShader (SwANGLE), WebGL in headless mode | ✅ |
 | `base_unittests` pass on the Hurd | ☐ |
 | `chrome --no-sandbox` starts with X11 | ☐ |
 | Debian packaging | ☐ |
@@ -37,10 +38,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 
 ## Known runtime issues
 
-* Crash at exit in PartitionAlloc's thread cache lookup (`ThreadCache::IsValid`)
-  while libc tears down a thread; under investigation.
-* The GPU process cannot initialize SwiftShader/Vulkan (no ICD found) and
-  exits; Chrome falls back to software compositing.
+* Dawn (WebGPU) finds no Vulkan driver of its own and logs warnings; WebGPU
+  is unavailable.
 * `CountResidentBytes` (`mincore`) is not implemented on the Hurd; memory
   dumps lack resident sizes.
 
@@ -51,5 +50,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
   them fail closed.
 * V8's WebAssembly trap handler relies on SIGSEGV handling with precise
   `ucontext` contents.
+* Under QEMU without KVM, child processes can miss the 15 s IPC connection
+  timeout and terminate themselves (seen as "Network service crashed").
+  `run-chrome` passes `--ipc-connection-timeout=120`.
 * Performance under QEMU emulation is too slow for real browsing; real
   hardware or KVM is needed.

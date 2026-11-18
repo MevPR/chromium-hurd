@@ -111,6 +111,11 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
 * General protection faults (e.g. non-canonical pointers) arrive as
   `SIGILL`, not `SIGSEGV`.
 * Error numbers start at `0x40000000`.
+* pfinet does not implement `TCP_KEEPIDLE` / `TCP_KEEPINTVL`; only
+  `SO_KEEPALIVE` is set.
+* ANGLE loads Chromium's own `libvulkan.so.1` from the module directory; a
+  bundle must ship it next to `libvk_swiftshader.so` and
+  `vk_swiftshader_icd.json`, otherwise the GPU process cannot start SwANGLE.
 * `syscall()`, `sched_getaffinity()`, `pthread_setschedparam()` and others are
   stubs that fail with `ENOSYS` (see `<gnu/stubs.h>` in the sysroot).
 

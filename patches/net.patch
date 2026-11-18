@@ -75,6 +75,22 @@ index d543bd080f..97c078f293 100644
  }
  
  bool GetNetworkListImpl(
+diff --git a/net/socket/tcp_socket_posix.cc b/net/socket/tcp_socket_posix.cc
+index e8837a969d..5badfb47b0 100644
+--- a/net/socket/tcp_socket_posix.cc
++++ b/net/socket/tcp_socket_posix.cc
+@@ -86,7 +86,10 @@ bool SetTCPKeepAlive(int fd, bool enable, int delay) {
+   // A delay of 0 doesn't work, and is the default, so ignore that and rely on
+   // whatever the OS defaults are once we turned it on above.
+   if (delay) {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_HURD)
++    // pfinet does not implement TCP_KEEPIDLE / TCP_KEEPINTVL; keep the system
++    // default interval.
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+     // Setting the keepalive interval varies by platform.
+ 
+     // Set seconds until first TCP keep alive.
 diff --git a/net/socket/udp_socket_posix.cc b/net/socket/udp_socket_posix.cc
 index cb0728ea8d..a4dc3a584e 100644
 --- a/net/socket/udp_socket_posix.cc
