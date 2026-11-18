@@ -29,6 +29,9 @@
 -ModuleCacheTest.CheckAgainstProcMaps
 -SystemMetrics2Test.GetSystemMemoryInfo
 -SetProcTitleLinuxTest.*
+# An exited child that has not been reaped yet (a zombie) has no procfs
+# entry, so its parent process id cannot be read.
+-ProcessUtilTest.GetParentProcessId2
 
 # There is no DMI information (/sys/devices/virtual/dmi).
 -SysInfoTest.GetHardwareInfo
@@ -62,6 +65,10 @@
 # Thread CPU time is accounted in clock ticks, which is too coarse for a 10 ms
 # measurement.
 -ThreadTicks.ThreadNow
+
+# Needs the main thread to win the race for a signalled event at least once;
+# on a single emulated CPU the waiting thread always wakes up first.
+-CancelableEventTest.BothCancelFailureAndSucceedOccurWithOneWaiter
 
 # Throughput and contention tests that time out under emulation (QEMU TCG).
 -All/SingleThreadTaskExecutorTypedTest.RecursivePostsDoNotFloodPipe/*

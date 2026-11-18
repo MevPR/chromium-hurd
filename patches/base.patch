@@ -1058,27 +1058,31 @@ index 678defed72..aca53fb9b1 100644
  #include <stdint.h>
  #include <sys/socket.h>
 diff --git a/base/process/internal_linux.cc b/base/process/internal_linux.cc
-index 9f79de5ad0..55f27499d6 100644
+index 9f79de5ad0..f6fbcf3ecf 100644
 --- a/base/process/internal_linux.cc
 +++ b/base/process/internal_linux.cc
-@@ -21,6 +21,7 @@
+@@ -21,8 +21,10 @@
  #include "base/strings/string_number_conversions.h"
  #include "base/strings/string_split.h"
  #include "base/strings/string_util.h"
 +#include "base/threading/platform_thread.h"
  #include "base/threading/thread_restrictions.h"
  #include "base/time/time.h"
++#include "base/time/time_override.h"
  #include "build/build_config.h"
-@@ -60,9 +61,21 @@ bool ReadProcFile(const FilePath& file, std::string* buffer) {
+ 
+ // Not defined on AIX by default.
+@@ -60,9 +62,22 @@ bool ReadProcFile(const FilePath& file, std::string* buffer) {
    // Synchronously reading files in /proc is safe.
    ScopedAllowBlocking scoped_allow_blocking;
  
 +#if BUILDFLAG(IS_HURD)
 +  // While a process is being exec'd, the Hurd's procfs fails reads of its
 +  // files with EIO, so retry for a while as long as the file exists.
-+  const TimeTicks deadline = TimeTicks::Now() + Seconds(3);
++  const auto now = &subtle::TimeTicksNowIgnoringOverride;
++  const TimeTicks deadline = now() + Seconds(3);
 +  while (!ReadFileToString(file, buffer)) {
-+    if (!PathExists(file) || TimeTicks::Now() > deadline) {
++    if (!PathExists(file) || now() > deadline) {
 +      return false;
 +    }
 +    PlatformThread::Sleep(Milliseconds(10));
@@ -1416,7 +1420,7 @@ index 6560a29287..35d9fe7492 100644
    // Return success only on total success. In case errno == ENOSYS (or any other
    // error), we'll fall through to reading from urandom below.
 diff --git a/base/synchronization/cancelable_event_posix.cc b/base/synchronization/cancelable_event_posix.cc
-index a0a8905505..c90233fc97 100644
+index a0a8905505..a893d3a8ee 100644
 --- a/base/synchronization/cancelable_event_posix.cc
 +++ b/base/synchronization/cancelable_event_posix.cc
 @@ -7,6 +7,7 @@
@@ -1427,27 +1431,30 @@ index a0a8905505..c90233fc97 100644
  #include <tuple>
  
  #include "base/check.h"
-@@ -15,6 +16,7 @@
+@@ -15,6 +16,8 @@
  #include "base/notreached.h"
  #include "base/posix/eintr_wrapper.h"
  #include "base/time/time.h"
++#include "base/time/time_override.h"
 +#include "build/build_config.h"
  
  namespace base {
  
-@@ -74,11 +76,22 @@ bool CancelableEvent::TimedWaitImpl(TimeDelta timeout) {
+@@ -74,11 +77,24 @@ bool CancelableEvent::TimedWaitImpl(TimeDelta timeout) {
    if (timeout.is_max()) {
      result = HANDLE_EINTR(sem_wait(&native_handle_));
    } else {
 +#if BUILDFLAG(IS_HURD)
 +    // GNU Mach may end a timed wait up to one clock tick early, so wait again
-+    // for the rest of the timeout.
-+    const TimeTicks end = TimeTicks::Now() + timeout;
++    // for the rest of the timeout (measured with the real clock, as the wait
++    // itself is).
++    const auto now = &subtle::TimeTicksNowIgnoringOverride;
++    const TimeTicks end = now() + timeout;
 +    do {
 +      const struct timespec ts =
-+          TimeDeltaToAbsTimeSpec(std::max(end - TimeTicks::Now(), TimeDelta()));
++          TimeDeltaToAbsTimeSpec(std::max(end - now(), TimeDelta()));
 +      result = HANDLE_EINTR(sem_timedwait(&native_handle_, &ts));
-+    } while (result == -1 && errno == ETIMEDOUT && TimeTicks::Now() < end);
++    } while (result == -1 && errno == ETIMEDOUT && now() < end);
 +#else
      // Compute the time for the end of the timeout.
      const struct timespec ts = TimeDeltaToAbsTimeSpec(timeout);
@@ -1589,10 +1596,18 @@ index 13f0eb30a8..99b5d90145 100644
  
  }  // namespace base
 diff --git a/base/threading/platform_thread_posix.cc b/base/threading/platform_thread_posix.cc
-index 2c34251a84..cf8123b5ed 100644
+index 2c34251a84..f8762c4d44 100644
 --- a/base/threading/platform_thread_posix.cc
 +++ b/base/threading/platform_thread_posix.cc
-@@ -211,6 +211,35 @@ void InvalidateTidCache() {
+@@ -26,6 +26,7 @@
+ #include "base/threading/scoped_blocking_call.h"
+ #include "base/threading/thread_id_name_manager.h"
+ #include "base/threading/thread_restrictions.h"
++#include "base/time/time_override.h"
+ #include "build/build_config.h"
+ #include "partition_alloc/buildflags.h"
+ 
+@@ -211,6 +212,35 @@ void InvalidateTidCache() {
    g_main_thread_tid_cache_valid.store(false, std::memory_order_relaxed);
  }
  
@@ -1628,7 +1643,7 @@ index 2c34251a84..cf8123b5ed 100644
  }  // namespace internal
  
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-@@ -223,6 +252,9 @@ PlatformThreadId PlatformThreadBase::CurrentId() {
+@@ -223,6 +253,9 @@ PlatformThreadId PlatformThreadBase::CurrentId() {
    uint64_t tid;
    CHECK_EQ(pthread_threadid_np(nullptr, &tid), 0);
    return PlatformThreadId(tid);
@@ -1638,7 +1653,7 @@ index 2c34251a84..cf8123b5ed 100644
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
    // Workaround false-positive MSAN use-of-uninitialized-value on
    // thread_local storage for loaded libraries:
-@@ -292,8 +324,7 @@ void PlatformThreadBase::YieldCurrentThread() {
+@@ -292,8 +325,7 @@ void PlatformThreadBase::YieldCurrentThread() {
  }
  #endif  // !BUILDFLAG(IS_APPLE)
  
@@ -1648,7 +1663,7 @@ index 2c34251a84..cf8123b5ed 100644
    struct timespec sleep_time, remaining;
  
    // Break the duration into seconds and nanoseconds.
-@@ -308,6 +339,21 @@ void PlatformThreadBase::Sleep(TimeDelta duration) {
+@@ -308,6 +340,22 @@ void PlatformThreadBase::Sleep(TimeDelta duration) {
    }
  }
  
@@ -1656,10 +1671,11 @@ index 2c34251a84..cf8123b5ed 100644
 +void PlatformThreadBase::Sleep(TimeDelta duration) {
 +#if BUILDFLAG(IS_HURD)
 +  // GNU Mach rounds timeouts to clock ticks and may wake a thread up to one
-+  // tick early, so sleep again until the whole duration has passed.
-+  const TimeTicks end = TimeTicks::Now() + duration;
++  // tick early, so sleep again until the whole duration has passed. Use the
++  // real clock: mock time does not advance while this thread sleeps.
++  const TimeTicks end = subtle::TimeTicksNowIgnoringOverride() + duration;
 +  for (TimeDelta left = duration; left.is_positive();
-+       left = end - TimeTicks::Now()) {
++       left = end - subtle::TimeTicksNowIgnoringOverride()) {
 +    NanoSleep(left);
 +  }
 +#else
