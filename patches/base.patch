@@ -1,5 +1,5 @@
 diff --git a/base/BUILD.gn b/base/BUILD.gn
-index 2587bd828b..fc5d4b5827 100644
+index 2587bd828b..cb91c89566 100644
 --- a/base/BUILD.gn
 +++ b/base/BUILD.gn
 @@ -1120,7 +1120,10 @@ component("base") {
@@ -14,6 +14,18 @@ index 2587bd828b..fc5d4b5827 100644
      sources += [
        "files/file_path_watcher_inotify.cc",
        "files/file_path_watcher_inotify.h",
+@@ -4432,6 +4435,11 @@ test("base_unittests") {
+     deps += [ ":stack_canary_linux_unittests" ]
+   }
+ 
++  if (is_hurd) {
++    # The Hurd uses file_path_watcher_stub.cc; the tests need inotify.
++    sources -= [ "files/file_path_watcher_unittest.cc" ]
++  }
++
+   sources += [ "test/tracing/test_trace_processor_example_unittest.cc" ]
+ 
+   if (is_posix) {
 diff --git a/base/allocator/partition_allocator/partition_alloc.gni b/base/allocator/partition_allocator/partition_alloc.gni
 index fdf65be88f..30bf8082f4 100644
 --- a/base/allocator/partition_allocator/partition_alloc.gni
@@ -175,6 +187,19 @@ index 58b66e834a..2bc248f314 100644
  
  // Need TLS support.
  #define PA_CONFIG_THREAD_CACHE_SUPPORTED() \
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
+index 3db0738079..874ccc2de2 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
+@@ -66,7 +66,7 @@
+ #endif
+ 
+ #if PA_BUILDFLAG(IS_POSIX)
+-#if PA_BUILDFLAG(IS_LINUX)
++#if PA_BUILDFLAG(IS_LINUX) && !PA_BUILDFLAG(IS_HURD)
+ // We need PKEY_DISABLE_WRITE in this file; glibc defines it in sys/mman.h but
+ // it's actually Linux-specific and other Linux libcs define it in linux/mman.h.
+ // We have to include both to be sure we get the definition.
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
 index 0093fad69b..d62392a3e6 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
@@ -430,6 +455,37 @@ index 538fdbc604..caedbe7fb4 100644
    if (HANDLE_EINTR(fallocate(file->GetPlatformFile(), 0, offset,
                               static_cast<off_t>(size))) != -1) {
      return true;
+diff --git a/base/files/file_util_unittest.cc b/base/files/file_util_unittest.cc
+index ba1f66c7a3..5fe1f9c497 100644
+--- a/base/files/file_util_unittest.cc
++++ b/base/files/file_util_unittest.cc
+@@ -89,7 +89,7 @@
+ #include <sys/socket.h>
+ #endif
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ #include <linux/fs.h>
+ #endif
+ 
+@@ -2199,7 +2199,7 @@ TEST_F(FileUtilTest, DeleteDirRecursiveWithOpenFile) {
+              File::FLAG_CREATE | File::FLAG_READ | File::FLAG_WRITE);
+   ASSERT_TRUE(PathExists(file_name3));
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   // On Windows, holding the file open in sufficient to make it un-deletable.
+   // The POSIX code is verifiable on Linux by creating an "immutable" file but
+   // this is best-effort because it's not supported by all file systems. Both
+@@ -2220,7 +2220,7 @@ TEST_F(FileUtilTest, DeleteDirRecursiveWithOpenFile) {
+   DeletePathRecursively(test_subdir);
+   EXPECT_FALSE(PathExists(file_name2));
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   // Make sure that the test can clean up after itself.
+   if (file_attrs_supported) {
+     flags &= ~FS_IMMUTABLE_FL;
 diff --git a/base/linux_util.cc b/base/linux_util.cc
 index a6b4fce5d4..72b0cb563a 100644
 --- a/base/linux_util.cc
@@ -492,6 +548,19 @@ index d878fd30ef..f64956093f 100644
  }
  
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/memory/platform_shared_memory_region_unittest.cc b/base/memory/platform_shared_memory_region_unittest.cc
+index 2f7d5f4726..d296f81ab7 100644
+--- a/base/memory/platform_shared_memory_region_unittest.cc
++++ b/base/memory/platform_shared_memory_region_unittest.cc
+@@ -397,7 +397,7 @@ TEST_F(PlatformSharedMemoryRegionTest, ConvertToUnsafeInvalidatesSecondHandle) {
+ }
+ #endif
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ namespace {
+ 
+ // Returns true if |fd| refers to a memfd. Regions are backed by memfd unless
 diff --git a/base/memory/protected_memory_posix.cc b/base/memory/protected_memory_posix.cc
 index 9e84b31e07..a9677c7934 100644
 --- a/base/memory/protected_memory_posix.cc
@@ -766,6 +835,18 @@ index 0490c59403..6808a8fb12 100644
  #else
      // |pid| will legitimately be -1 if we read EOF, so only DCHECK if we
      // actually received a message.  Unfortunately, Linux allows sending zero
+diff --git a/base/posix/unix_domain_socket_unittest.cc b/base/posix/unix_domain_socket_unittest.cc
+index 678defed72..aca53fb9b1 100644
+--- a/base/posix/unix_domain_socket_unittest.cc
++++ b/base/posix/unix_domain_socket_unittest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "base/posix/unix_domain_socket.h"
+ 
++#include <signal.h>
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <sys/socket.h>
 diff --git a/base/process/launch.h b/base/process/launch.h
 index b282410b47..73abada4f9 100644
 --- a/base/process/launch.h
@@ -898,6 +979,28 @@ index 2618b503db..2b3cedbd87 100644
    return result == 0;
  }
  
+diff --git a/base/process/process_util_unittest.cc b/base/process/process_util_unittest.cc
+index c955d0b30a..09fcf7fae3 100644
+--- a/base/process/process_util_unittest.cc
++++ b/base/process/process_util_unittest.cc
+@@ -1420,7 +1420,7 @@ TEST_F(ProcessUtilTest, LaunchProcess) {
+   EXPECT_EQ("wibble", TestLaunchProcess(kPrintEnvCommand, env_changes,
+                                         no_clear_environ, no_clone_flags));
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+   // Test a non-trival value for clone_flags.
+   EXPECT_EQ("wibble", TestLaunchProcess(kPrintEnvCommand, env_changes,
+                                         no_clear_environ, CLONE_FS));
+@@ -1510,7 +1510,7 @@ TEST_F(ProcessUtilTest, LaunchProcessUsingToken) {
+ }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ MULTIPROCESS_TEST_MAIN(CheckPidProcess) {
+   const pid_t kInitPid = 1;
+   const pid_t pid = syscall(__NR_getpid);
 diff --git a/base/profiler/stack_copier_signal.cc b/base/profiler/stack_copier_signal.cc
 index 62ab1c02f7..facad1a070 100644
 --- a/base/profiler/stack_copier_signal.cc
@@ -1165,6 +1268,19 @@ index 2c34251a84..4cbb03d873 100644
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
    // Workaround false-positive MSAN use-of-uninitialized-value on
    // thread_local storage for loaded libraries:
+diff --git a/base/threading/platform_thread_unittest.cc b/base/threading/platform_thread_unittest.cc
+index 9c368ce2b3..25547ae717 100644
+--- a/base/threading/platform_thread_unittest.cc
++++ b/base/threading/platform_thread_unittest.cc
+@@ -657,7 +657,7 @@ INSTANTIATE_TEST_SUITE_P(
+ 
+ #endif  // BUILDFLAG(IS_APPLE)
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ 
+ namespace {
+ 
 diff --git a/base/time/time_now_posix.cc b/base/time/time_now_posix.cc
 index 70252d7230..e08f4d1a6d 100644
 --- a/base/time/time_now_posix.cc

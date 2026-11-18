@@ -1,0 +1,14 @@
+diff --git a/third_party/google_benchmark/BUILD.gn b/third_party/google_benchmark/BUILD.gn
+index 6d1e9b1dd3..6f6ff8029e 100644
+--- a/third_party/google_benchmark/BUILD.gn
++++ b/third_party/google_benchmark/BUILD.gn
+@@ -79,7 +79,8 @@ component("google_benchmark") {
+     "BENCHMARK_VERSION=\"1.9.0\"",
+   ]
+ 
+-  if (is_linux) {
++  # libpfm needs the Linux perf_event interface, which the Hurd lacks.
++  if (is_linux && !is_hurd) {
+     # Include hardware performance counter support.
+     defines += [ "HAVE_LIBPFM=1" ]
+     deps = [ "//third_party/libpfm4" ]
