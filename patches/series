@@ -17,6 +17,7 @@ third_party-cpuinfo.patch
 third_party-crashpad.patch
 third_party-dav1d.patch
 third_party-dawn.patch
+third_party-federated_compute.patch
 third_party-ffmpeg.patch
 third_party-fontconfig.patch
 third_party-libc++.patch

@@ -1,0 +1,14 @@
+diff --git a/third_party/federated_compute/third_party/protodatastore-cpp/src/protostore/file-storage.cc b/third_party/federated_compute/third_party/protodatastore-cpp/src/protostore/file-storage.cc
+index 7ffe8244ec..0d73550579 100644
+--- a/third_party/federated_compute/third_party/protodatastore-cpp/src/protostore/file-storage.cc
++++ b/third_party/federated_compute/third_party/protodatastore-cpp/src/protostore/file-storage.cc
+@@ -130,7 +130,8 @@ absl::Status IOError(absl::string_view context) {
+     case ENETUNREACH:   // Network unreachable
+     case ENOLCK:        // No locks available
+     case ENOLINK:       // Link has been severed
+-#if !(defined(__APPLE__) || defined(__FreeBSD__) || defined(_WIN32))
++#if !(defined(__APPLE__) || defined(__FreeBSD__) || defined(_WIN32) || \
++      defined(__GNU__))
+     case ENONET:  // Machine is not on the network
+ #endif
+       return absl::UnavailableError(message);

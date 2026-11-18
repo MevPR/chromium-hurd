@@ -138,10 +138,10 @@ index c5cf0b732f..a962430050 100644
  
  bool NamedMojoServerEndpointConnectorLinux::TryStart() {
 diff --git a/components/os_crypt/async/browser/secret_portal_key_provider.cc b/components/os_crypt/async/browser/secret_portal_key_provider.cc
-index 5527777ca5..28e442217c 100644
+index 5527777ca5..f573274aa8 100644
 --- a/components/os_crypt/async/browser/secret_portal_key_provider.cc
 +++ b/components/os_crypt/async/browser/secret_portal_key_provider.cc
-@@ -5,7 +5,14 @@
+@@ -5,7 +5,18 @@
  #include "components/os_crypt/async/browser/secret_portal_key_provider.h"
  
  #include <fcntl.h>
@@ -150,6 +150,10 @@ index 5527777ca5..28e442217c 100644
 +
 +#if BUILDFLAG(IS_HURD)
 +#include <limits.h>  // PATH_MAX is defined by the build on GNU/Hurd.
++#ifndef PIPE_BUF
++// The Hurd has no fixed PIPE_BUF; this is the Linux value.
++#define PIPE_BUF 4096
++#endif
 +#else
  #include <linux/limits.h>
 +#endif
