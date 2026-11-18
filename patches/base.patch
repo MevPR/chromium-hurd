@@ -104,10 +104,23 @@ index 0711808209..3583a1bdda 100644
  #else
    return true;
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h b/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
-index 2c35ada4f8..0991e376d1 100644
+index 2c35ada4f8..52f983f7f4 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
 +++ b/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
-@@ -332,7 +332,15 @@ void DiscardSystemPagesInternal(uintptr_t address, size_t length) {
+@@ -221,7 +221,12 @@ void DecommitSystemPagesInternal(
+     // Memory may not be writable.
+     size_t size = std::min(length, 2 * SystemPageSize());
+     void* ptr = reinterpret_cast<void*>(address);
++#if PA_BUILDFLAG(IS_HURD)
++    // GNU Mach makes write-only pages inaccessible, so ask for read too.
++    PA_CHECK(mprotect(ptr, size, PROT_READ | PROT_WRITE) == 0);
++#else
+     PA_CHECK(mprotect(ptr, size, PROT_WRITE) == 0);
++#endif
+     PA_UNSAFE_TODO(memset(ptr, 0xcc, size));
+   }
+ #endif
+@@ -332,7 +337,15 @@ void DiscardSystemPagesInternal(uintptr_t address, size_t length) {
    // performance benefits unclear.
    //
    // Therefore, we just do the simple thing: MADV_DONTNEED.
@@ -188,7 +201,7 @@ index 58b66e834a..2bc248f314 100644
  // Need TLS support.
  #define PA_CONFIG_THREAD_CACHE_SUPPORTED() \
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
-index 3db0738079..874ccc2de2 100644
+index 3db0738079..f742746348 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
 +++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_unittest.cc
 @@ -66,7 +66,7 @@
@@ -200,6 +213,27 @@ index 3db0738079..874ccc2de2 100644
  // We need PKEY_DISABLE_WRITE in this file; glibc defines it in sys/mman.h but
  // it's actually Linux-specific and other Linux libcs define it in linux/mman.h.
  // We have to include both to be sure we get the definition.
+@@ -775,7 +775,9 @@ void FreeFullSlotSpan(PartitionRoot* root, const SlotSpan* slot_span) {
+   EXPECT_TRUE(slot_span->is_empty());
+ }
+ 
+-#if PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
++// GNU/Hurd has no mincore().
++#if (PA_BUILDFLAG(IS_LINUX) && !PA_BUILDFLAG(IS_HURD)) || \
++    PA_BUILDFLAG(IS_CHROMEOS)
+ bool CheckPageInCore(void* ptr, bool in_core) {
+   unsigned char ret = 0;
+   EXPECT_EQ(0, mincore(ptr, SystemPageSize(), &ret));
+@@ -786,7 +788,8 @@ bool CheckPageInCore(void* ptr, bool in_core) {
+   EXPECT_TRUE(CheckPageInCore(ptr, in_core))
+ #else
+ #define CHECK_PAGE_IN_CORE(ptr, in_core) (void)(0)
+-#endif  // PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
++#endif  // (PA_BUILDFLAG(IS_LINUX) && !PA_BUILDFLAG(IS_HURD)) ||
++        // PA_BUILDFLAG(IS_CHROMEOS)
+ 
+ class MockPartitionStatsDumper : public PartitionStatsDumper {
+  public:
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h b/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
 index 0093fad69b..d62392a3e6 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls.h
@@ -281,10 +315,22 @@ index 826feb7629..cc40dd307a 100644
    }
  
 diff --git a/base/debug/stack_trace_posix.cc b/base/debug/stack_trace_posix.cc
-index d4b6111077..fb001e9b09 100644
+index d4b6111077..feaa34e06c 100644
 --- a/base/debug/stack_trace_posix.cc
 +++ b/base/debug/stack_trace_posix.cc
-@@ -324,7 +324,8 @@ void PrintToStderr(const char* output) {
+@@ -72,6 +72,11 @@
+ #include "base/debug/proc_maps_linux.h"
+ #endif
+ 
++#if BUILDFLAG(IS_HURD)
++#include <limits.h>
++#include <link.h>
++#endif
++
+ #include "base/cfi_buildflags.h"
+ #include "base/debug/debugger.h"
+ #include "base/debug/debugging_buildflags.h"
+@@ -324,7 +329,8 @@ void PrintToStderr(const char* output) {
    std::ignore = HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output)));
  }
  
@@ -294,7 +340,7 @@ index d4b6111077..fb001e9b09 100644
  void AlarmSignalHandler(int signal, siginfo_t* info, void* void_context) {
    // We have seen rare cases on AMD linux where the default signal handler
    // either does not run or a thread (Probably an AMD driver thread) prevents
-@@ -445,7 +446,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+@@ -445,7 +451,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
        PrintToStderr(" SEGV_ACCERR ");
      }
  #if defined(ARCH_CPU_X86_64) && \
@@ -304,7 +350,7 @@ index d4b6111077..fb001e9b09 100644
      else if (info->si_code == SI_KERNEL) {
        PrintToStderr(" SI_KERNEL");
      }
-@@ -472,7 +474,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+@@ -472,7 +479,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
  #endif  // BUILDFLAG(CFI_ENFORCEMENT_TRAP)
  
  #if defined(ARCH_CPU_X86_64) && \
@@ -314,7 +360,7 @@ index d4b6111077..fb001e9b09 100644
    if (signal == SIGSEGV && info->si_code == SI_KERNEL) {
      PrintToStderr(
          " Possibly a General Protection Fault, can be due to a non-canonical "
-@@ -483,7 +486,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+@@ -483,7 +491,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
  
    debug::StackTrace().Print();
  
@@ -323,7 +369,7 @@ index d4b6111077..fb001e9b09 100644
  #if ARCH_CPU_X86_FAMILY
    ucontext_t* context = reinterpret_cast<ucontext_t*>(void_context);
    auto gregs = base::span(context->uc_mcontext.gregs);
-@@ -545,7 +548,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
+@@ -545,7 +553,8 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
      _exit(EXIT_FAILURE);
    }
  
@@ -333,6 +379,79 @@ index d4b6111077..fb001e9b09 100644
    // Set an alarm to trigger in case the default handler does not terminate
    // the process. See 'AlarmSignalHandler' for more details.
    struct sigaction action;
+@@ -871,6 +880,64 @@ class SandboxSymbolizeHelper {
+     }
+   }
+ 
++#if BUILDFLAG(IS_HURD)
++  // Adds the PT_LOAD segments of one loaded module to `data`, a
++  // std::vector<MappedMemoryRegion>. Callback for dl_iterate_phdr().
++  static int AddModuleRegions(struct dl_phdr_info* info,
++                              size_t size,
++                              void* data) {
++    auto* regions = static_cast<std::vector<MappedMemoryRegion>*>(data);
++    std::string path = info->dlpi_name ? info->dlpi_name : "";
++    if (path.empty()) {
++      // The main program.
++      char exe[PATH_MAX];
++      const ssize_t length = readlink("/proc/self/exe", exe, sizeof(exe));
++      if (length <= 0 || static_cast<size_t>(length) >= sizeof(exe)) {
++        return 0;
++      }
++      path.assign(exe, static_cast<size_t>(length));
++    }
++    const uintptr_t page_mask = ~(static_cast<uintptr_t>(getpagesize()) - 1);
++    // SAFETY: dl_iterate_phdr() passes `dlpi_phnum` program headers.
++    for (const ElfW(Phdr)& phdr :
++         UNSAFE_BUFFERS(base::span(info->dlpi_phdr, info->dlpi_phnum))) {
++      if (phdr.p_type != PT_LOAD) {
++        continue;
++      }
++      const uintptr_t start = info->dlpi_addr + phdr.p_vaddr;
++      MappedMemoryRegion region;
++      region.start = start & page_mask;
++      region.end = (start + phdr.p_memsz + ~page_mask) & page_mask;
++      region.offset = phdr.p_offset & page_mask;
++      region.base = info->dlpi_addr;
++      region.permissions = MappedMemoryRegion::PRIVATE;
++      if (phdr.p_flags & PF_R) {
++        region.permissions |= MappedMemoryRegion::READ;
++      }
++      if (phdr.p_flags & PF_W) {
++        region.permissions |= MappedMemoryRegion::WRITE;
++      }
++      if (phdr.p_flags & PF_X) {
++        region.permissions |= MappedMemoryRegion::EXECUTE;
++      }
++      region.path = path;
++      regions->push_back(std::move(region));
++    }
++    return 0;
++  }
++
++  // The Hurd's /proc/self/maps names memory objects instead of files, so the
++  // list of loaded modules comes from the dynamic linker instead.
++  bool CacheMemoryRegions() {
++    dl_iterate_phdr(&AddModuleRegions, &regions_);
++    if (regions_.empty()) {
++      LOG(ERROR) << "Failed to list the loaded modules";
++      return false;
++    }
++    is_initialized_ = true;
++    return true;
++  }
++#else
+   // Parses /proc/self/maps in order to compile a list of all object file names
+   // for the modules that are loaded in the current process.
+   // Returns true on success.
+@@ -893,6 +960,7 @@ class SandboxSymbolizeHelper {
+     is_initialized_ = true;
+     return true;
+   }
++#endif  // BUILDFLAG(IS_HURD)
+ 
+   // Opens all object files and caches their file descriptors.
+   void OpenSymbolFiles() {
 diff --git a/base/files/dir_reader_posix.h b/base/files/dir_reader_posix.h
 index 7fbda52ab4..c1d637f951 100644
 --- a/base/files/dir_reader_posix.h
@@ -938,6 +1057,40 @@ index 678defed72..aca53fb9b1 100644
  #include <stddef.h>
  #include <stdint.h>
  #include <sys/socket.h>
+diff --git a/base/process/internal_linux.cc b/base/process/internal_linux.cc
+index 9f79de5ad0..55f27499d6 100644
+--- a/base/process/internal_linux.cc
++++ b/base/process/internal_linux.cc
+@@ -21,6 +21,7 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
++#include "base/threading/platform_thread.h"
+ #include "base/threading/thread_restrictions.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -60,9 +61,21 @@ bool ReadProcFile(const FilePath& file, std::string* buffer) {
+   // Synchronously reading files in /proc is safe.
+   ScopedAllowBlocking scoped_allow_blocking;
+ 
++#if BUILDFLAG(IS_HURD)
++  // While a process is being exec'd, the Hurd's procfs fails reads of its
++  // files with EIO, so retry for a while as long as the file exists.
++  const TimeTicks deadline = TimeTicks::Now() + Seconds(3);
++  while (!ReadFileToString(file, buffer)) {
++    if (!PathExists(file) || TimeTicks::Now() > deadline) {
++      return false;
++    }
++    PlatformThread::Sleep(Milliseconds(10));
++  }
++#else
+   if (!ReadFileToString(file, buffer)) {
+     return false;
+   }
++#endif  // BUILDFLAG(IS_HURD)
+   return !buffer->empty();
+ }
+ 
 diff --git a/base/process/launch.h b/base/process/launch.h
 index b282410b47..73abada4f9 100644
 --- a/base/process/launch.h
@@ -1262,6 +1415,49 @@ index 6560a29287..35d9fe7492 100644
  
    // Return success only on total success. In case errno == ENOSYS (or any other
    // error), we'll fall through to reading from urandom below.
+diff --git a/base/synchronization/cancelable_event_posix.cc b/base/synchronization/cancelable_event_posix.cc
+index a0a8905505..c90233fc97 100644
+--- a/base/synchronization/cancelable_event_posix.cc
++++ b/base/synchronization/cancelable_event_posix.cc
+@@ -7,6 +7,7 @@
+ #include <errno.h>
+ #include <semaphore.h>
+ 
++#include <algorithm>
+ #include <tuple>
+ 
+ #include "base/check.h"
+@@ -15,6 +16,7 @@
+ #include "base/notreached.h"
+ #include "base/posix/eintr_wrapper.h"
+ #include "base/time/time.h"
++#include "build/build_config.h"
+ 
+ namespace base {
+ 
+@@ -74,11 +76,22 @@ bool CancelableEvent::TimedWaitImpl(TimeDelta timeout) {
+   if (timeout.is_max()) {
+     result = HANDLE_EINTR(sem_wait(&native_handle_));
+   } else {
++#if BUILDFLAG(IS_HURD)
++    // GNU Mach may end a timed wait up to one clock tick early, so wait again
++    // for the rest of the timeout.
++    const TimeTicks end = TimeTicks::Now() + timeout;
++    do {
++      const struct timespec ts =
++          TimeDeltaToAbsTimeSpec(std::max(end - TimeTicks::Now(), TimeDelta()));
++      result = HANDLE_EINTR(sem_timedwait(&native_handle_, &ts));
++    } while (result == -1 && errno == ETIMEDOUT && TimeTicks::Now() < end);
++#else
+     // Compute the time for the end of the timeout.
+     const struct timespec ts = TimeDeltaToAbsTimeSpec(timeout);
+ 
+     // Wait for semaphore to be signalled or to timeout.
+     result = HANDLE_EINTR(sem_timedwait(&native_handle_, &ts));
++#endif  // BUILDFLAG(IS_HURD)
+   }
+   if (result == 0) {
+     return true;  // The semaphore was signalled.
 diff --git a/base/system/sys_info_posix.cc b/base/system/sys_info_posix.cc
 index 5460a7f35e..3d3bd67a91 100644
 --- a/base/system/sys_info_posix.cc
@@ -1345,8 +1541,55 @@ index b0dab76f9e..5a96e37c28 100644
  }
  
  void SetCurrentThreadTypeImpl(ThreadType thread_type,
+diff --git a/base/threading/platform_thread_metrics_linux.cc b/base/threading/platform_thread_metrics_linux.cc
+index 13f0eb30a8..99b5d90145 100644
+--- a/base/threading/platform_thread_metrics_linux.cc
++++ b/base/threading/platform_thread_metrics_linux.cc
+@@ -15,11 +15,14 @@
+ #include "base/numerics/clamped_math.h"
+ #include "base/process/internal_linux.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/threading/platform_thread.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
++#include "build/build_config.h"
+ 
+ namespace base {
+ 
++#if !BUILDFLAG(IS_HURD)
+ namespace {
+ 
+ // Get the total CPU from a proc stat buffer. Return value is a TimeDelta
+@@ -45,9 +48,19 @@ std::optional<TimeDelta> ParseTotalCPUTimeFromStats(
+ }
+ 
+ }  // namespace
++#endif  // !BUILDFLAG(IS_HURD)
+ 
+ std::optional<TimeDelta> PlatformThreadMetrics::GetCumulativeCPUUsage() {
+   TRACE_EVENT("base", "Thread::GetCumulativeCPUUsage");
++#if BUILDFLAG(IS_HURD)
++  // The Hurd has no per-thread procfs entries, and thread ids are not process
++  // ids, so /proc/<id> would describe an unrelated process. Only the calling
++  // thread's CPU time is available, from CLOCK_THREAD_CPUTIME_ID.
++  if (tid_ != PlatformThread::CurrentId()) {
++    return std::nullopt;
++  }
++  return ThreadTicks::Now() - ThreadTicks();
++#else
+   const auto thread_stat_path = FilePath(internal::kProcDir)
+                                     .Append(NumberToString(tid_.raw()))
+                                     .Append(internal::kStatFile);
+@@ -58,6 +71,7 @@ std::optional<TimeDelta> PlatformThreadMetrics::GetCumulativeCPUUsage() {
+     return std::nullopt;
+   }
+   return ParseTotalCPUTimeFromStats(proc_stats);
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ }  // namespace base
 diff --git a/base/threading/platform_thread_posix.cc b/base/threading/platform_thread_posix.cc
-index 2c34251a84..4cbb03d873 100644
+index 2c34251a84..cf8123b5ed 100644
 --- a/base/threading/platform_thread_posix.cc
 +++ b/base/threading/platform_thread_posix.cc
 @@ -211,6 +211,35 @@ void InvalidateTidCache() {
@@ -1395,6 +1638,38 @@ index 2c34251a84..4cbb03d873 100644
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
    // Workaround false-positive MSAN use-of-uninitialized-value on
    // thread_local storage for loaded libraries:
+@@ -292,8 +324,7 @@ void PlatformThreadBase::YieldCurrentThread() {
+ }
+ #endif  // !BUILDFLAG(IS_APPLE)
+ 
+-// static
+-void PlatformThreadBase::Sleep(TimeDelta duration) {
++static void NanoSleep(TimeDelta duration) {
+   struct timespec sleep_time, remaining;
+ 
+   // Break the duration into seconds and nanoseconds.
+@@ -308,6 +339,21 @@ void PlatformThreadBase::Sleep(TimeDelta duration) {
+   }
+ }
+ 
++// static
++void PlatformThreadBase::Sleep(TimeDelta duration) {
++#if BUILDFLAG(IS_HURD)
++  // GNU Mach rounds timeouts to clock ticks and may wake a thread up to one
++  // tick early, so sleep again until the whole duration has passed.
++  const TimeTicks end = TimeTicks::Now() + duration;
++  for (TimeDelta left = duration; left.is_positive();
++       left = end - TimeTicks::Now()) {
++    NanoSleep(left);
++  }
++#else
++  NanoSleep(duration);
++#endif  // BUILDFLAG(IS_HURD)
++}
++
+ // static
+ const char* PlatformThreadBase::GetName() {
+   return ThreadIdNameManager::GetInstance()->GetName(CurrentId());
 diff --git a/base/threading/platform_thread_unittest.cc b/base/threading/platform_thread_unittest.cc
 index 9c368ce2b3..25547ae717 100644
 --- a/base/threading/platform_thread_unittest.cc

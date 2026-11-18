@@ -1,0 +1,68 @@
+# base_unittests that cannot pass on Debian GNU/Hurd because they test Linux
+# kernel interfaces the Hurd does not provide, or exact timing that the Hurd
+# (or a slow emulator) does not meet. Real bugs are fixed in the patches
+# instead of being listed here.
+#
+# Use with --test-launcher-filter-file=testing/buildbot/filters/hurd.base_unittests.filter
+
+# No mincore(): resident page counts are unknown.
+-ProcessMemoryDumpTest.CountResidentBytes
+-ProcessMemoryDumpTest.CountResidentBytesInSharedMemory
+-SamplingHeapProfilerTest.GetSamplesWithResidency
+
+# madvise(MADV_DONTNEED) is not implemented, so purged memory keeps its
+# contents.
+-DiscardableSharedMemoryTest.ZeroFilledPagesAfterPurge
+
+# The Hurd's procfs has no /proc/<pid>/fd, no /proc/<pid>/task, no page fault
+# counts in /proc/<pid>/stat and no smaps_rollup; /proc/<pid>/maps names
+# memory objects instead of files; /proc/meminfo has no Buffers or
+# anonymous/file page split; /proc/<pid>/cmdline does not show a process
+# title written over argv.
+-ProcessMetricsTest.GetChildOpenFdCount
+-ProcessMetricsTest.GetOpenFdCount
+-ProcessMetricsTestLinux.GetCumulativeCPUUsagePerThread
+-ProcessMetricsTestLinux.GetPageFaultCounts
+-PlatformThreadMetricsTest.GetCumulativeCPUUsage_OtherThread
+-SmapsRollupTest.*
+-ProcMapsTest.ReadProcMaps
+-ModuleCacheTest.CheckAgainstProcMaps
+-SystemMetrics2Test.GetSystemMemoryInfo
+-SetProcTitleLinuxTest.*
+
+# There is no DMI information (/sys/devices/virtual/dmi).
+-SysInfoTest.GetHardwareInfo
+
+# uname() reports the Hurd version ("0.9") as the kernel release.
+-SysInfoTest.KernelVersionNumber
+
+# No SO_PASSCRED / SCM_CREDENTIALS on AF_UNIX sockets.
+-UnixDomainSocketTest.RecvPid
+-UnixDomainSocketTest.RecvPidWithMaxDescriptors
+
+# shutdown() does not wake up a thread blocked in recv() on the socket.
+-CancelableSyncSocketTest.ShutdownCancelsReceive
+
+# Accessing a non-canonical address raises SIGILL instead of SIGSEGV.
+-CheckExitCodeAfterSignalHandlerDeathTest.CheckSIGSEGVNonCanonicalAddress
+
+# The kernel already reserves the lowest 4 GiB of the address space, so
+# PartitionAlloc cannot (and need not) reserve its zero segment there.
+-PartitionAddressSpaceTest.ZeroSegment
+
+# Lowering the nice value again needs privileges, so a thread that was moved
+# to background priority cannot return to the default priority as non-root.
+-ScopedThreadPriorityTest.BoostableTest
+
+# The main thread may wake up before its delayed task is due (as on iOS);
+# these tests document the exact wake-up behavior of other platforms.
+-RunUntilTestWithMockTime.ConditionOnlyObservedIfWorkIsDone
+-RunUntilTestWithThreadPool.TimesOutWhenMainThreadSleepsForever
+
+# Thread CPU time is accounted in clock ticks, which is too coarse for a 10 ms
+# measurement.
+-ThreadTicks.ThreadNow
+
+# Throughput and contention tests that time out under emulation (QEMU TCG).
+-All/SingleThreadTaskExecutorTypedTest.RecursivePostsDoNotFloodPipe/*
+-LockFreeBloomFilterTest.ConcurrentAccess
