@@ -51,10 +51,29 @@ index b7aeeade6b..19ea5dd0c2 100644
  # define V8_OS_POSIX 1
  # define V8_OS_SOLARIS 1
 diff --git a/v8/src/api/api.cc b/v8/src/api/api.cc
-index a858e0a140..e2a4dda619 100644
+index a858e0a140..4dee751e96 100644
 --- a/v8/src/api/api.cc
 +++ b/v8/src/api/api.cc
-@@ -6532,7 +6532,7 @@ bool v8::V8::Initialize(const int build_config) {
+@@ -176,13 +176,17 @@
+ 
+ #include "src/strings/string-hasher-inl.h"
+ 
+-#if V8_OS_LINUX || V8_OS_DARWIN || V8_OS_FREEBSD
++#if V8_OS_LINUX || V8_OS_DARWIN || V8_OS_FREEBSD || V8_OS_HURD
+ #include <signal.h>
+ #include <unistd.h>
+ 
+ #if V8_ENABLE_WEBASSEMBLY
+ #include "include/v8-wasm-trap-handler-posix.h"
++// GNU/Hurd has no trap handler implementation (V8_TRAP_HANDLER_SUPPORTED is
++// false); only the API entry point is provided.
++#if !V8_OS_HURD
+ #include "src/trap-handler/handler-inside-posix.h"
++#endif
+ #endif  // V8_ENABLE_WEBASSEMBLY
+ 
+ #endif  // V8_OS_LINUX || V8_OS_DARWIN || V8_OS_FREEBSD
+@@ -6532,7 +6536,7 @@ bool v8::V8::Initialize(const int build_config) {
    return true;
  }
  

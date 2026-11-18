@@ -1,6 +1,6 @@
 # Status
 
-Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-17.
+Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 
 ## Milestones
 
@@ -11,7 +11,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-17.
 | `//base` compiles | ✅ |
 | First linked executable (`check_example`): ELF for GNU/Hurd, `ld-x86-64.so.1`, `libc.so.0.3` | ✅ |
 | `check_example` runs on Debian GNU/Hurd (QEMU): logging, `CHECK`, stack-trace handler work | ✅ |
-| `chrome` compiles (`ninja -k 0`, errors fixed wave by wave) | ⏳ in progress |
+| `chrome` compiles and links (ELF for GNU/Hurd) | ✅ |
+| `chrome` starts on Debian GNU/Hurd | ⏳ |
 | `base_unittests` pass on the Hurd | ☐ |
 | `content_shell` renders a page | ☐ |
 | `chrome --no-sandbox` starts with X11 | ☐ |
