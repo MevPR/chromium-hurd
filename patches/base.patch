@@ -427,6 +427,57 @@ index d878fd30ef..f64956093f 100644
  }
  
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/memory/protected_memory_posix.cc b/base/memory/protected_memory_posix.cc
+index 9e84b31e07..c25965ed3f 100644
+--- a/base/memory/protected_memory_posix.cc
++++ b/base/memory/protected_memory_posix.cc
+@@ -6,7 +6,9 @@
+ 
+ #include <sys/mman.h>
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_HURD)
++#include <mach.h>
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
+ #include <sys/resource.h>
+ #endif  // BUILDFLAG(IS_LINUX)
+ 
+@@ -34,7 +36,34 @@ bool SetMemory(void* start, void* end, int prot) {
+ }  // namespace
+ 
+ namespace internal {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_HURD)
++// The Linux implementation below relies on the kernel failing getrlimit()
++// with EFAULT for a read-only buffer. On GNU/Hurd getrlimit() writes the
++// result from user space and would crash instead, so ask Mach directly, as on
++// macOS.
++void CheckMemoryReadOnly(const void* ptr) {
++  const vm_address_t page_start =
++      bits::AlignDown(reinterpret_cast<uintptr_t>(ptr), GetPageSize());
++  vm_address_t address = page_start;
++  vm_size_t size = 0;
++  vm_prot_t protection = 0;
++  vm_prot_t max_protection = 0;
++  vm_inherit_t inheritance = 0;
++  boolean_t is_shared = FALSE;
++  mach_port_t object_name = MACH_PORT_NULL;
++  vm_offset_t offset = 0;
++  kern_return_t kr = vm_region(mach_task_self(), &address, &size, &protection,
++                               &max_protection, &inheritance, &is_shared,
++                               &object_name, &offset);
++  if (MACH_PORT_VALID(object_name)) {
++    mach_port_deallocate(mach_task_self(), object_name);
++  }
++  // vm_region() returns the region at or after `address`; it must contain the
++  // page and must not be writable.
++  CHECK(kr == KERN_SUCCESS && address <= page_start &&
++        page_start < address + size && protection == VM_PROT_READ);
++}
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
+ void CheckMemoryReadOnly(const void* ptr) {
+   const uintptr_t page_start =
+       bits::AlignDown(reinterpret_cast<uintptr_t>(ptr), GetPageSize());
 diff --git a/base/message_loop/message_pump_epoll.cc b/base/message_loop/message_pump_epoll.cc
 index 91449482c8..76b2cb7c73 100644
 --- a/base/message_loop/message_pump_epoll.cc
@@ -725,7 +776,7 @@ index 99427d5301..d8e32b4637 100644
  
  // This function runs on the stack specified on the clone call. It uses longjmp
 diff --git a/base/process/process_linux.cc b/base/process/process_linux.cc
-index 2618b503db..6295c003a7 100644
+index 2618b503db..2b3cedbd87 100644
 --- a/base/process/process_linux.cc
 +++ b/base/process/process_linux.cc
 @@ -5,7 +5,11 @@
@@ -740,7 +791,15 @@ index 2618b503db..6295c003a7 100644
  #include <sys/resource.h>
  #include <sys/vfs.h>
  
-@@ -69,11 +73,16 @@ const char kBackgroundExperiment[] = "/chrome_renderers_background";
+@@ -15,6 +19,7 @@
+ 
+ #include "base/check.h"
+ #include "base/files/file_util.h"
++#include "base/logging.h"
+ #include "base/notreached.h"
+ #include "base/posix/can_lower_nice_to.h"
+ #include "base/process/internal_linux.h"
+@@ -69,11 +74,16 @@ const char kBackgroundExperiment[] = "/chrome_renderers_background";
  const char kProcPath[] = "/proc/%d/cgroup";
  
  bool PathIsCGroupFileSystem(const FilePath& path) {
@@ -757,7 +816,7 @@ index 2618b503db..6295c003a7 100644
  }
  
  struct CGroups {
-@@ -198,7 +207,13 @@ bool Process::SetPriority(Priority priority) {
+@@ -198,7 +208,13 @@ bool Process::SetPriority(Priority priority) {
                                                           : kForegroundPriority;
    int result =
        setpriority(PRIO_PROCESS, static_cast<id_t>(process_), priority_value);
