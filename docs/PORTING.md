@@ -116,6 +116,8 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
 * ANGLE loads Chromium's own `libvulkan.so.1` from the module directory; a
   bundle must ship it next to `libvk_swiftshader.so` and
   `vk_swiftshader_icd.json`, otherwise the GPU process cannot start SwANGLE.
+* There is no parent-death signal (`PR_SET_PDEATHSIG`);
+  `LaunchOptions::kill_on_parent_death` is ignored.
 * `syscall()`, `sched_getaffinity()`, `pthread_setschedparam()` and others are
   stubs that fail with `ENOSYS` (see `<gnu/stubs.h>` in the sysroot).
 

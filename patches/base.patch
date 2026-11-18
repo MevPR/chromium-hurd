@@ -864,7 +864,7 @@ index b282410b47..73abada4f9 100644
    (__builtin_constant_p(PTHREAD_STACK_MIN) ? PTHREAD_STACK_MIN : 131072)
  #else
 diff --git a/base/process/launch_posix.cc b/base/process/launch_posix.cc
-index 99427d5301..d8e32b4637 100644
+index 99427d5301..7fbf903c6f 100644
 --- a/base/process/launch_posix.cc
 +++ b/base/process/launch_posix.cc
 @@ -73,12 +73,14 @@ namespace base {
@@ -904,7 +904,25 @@ index 99427d5301..d8e32b4637 100644
    if (options.clone_flags) {
      // Signal handling in this function assumes the creation of a new
      // process, so we check that a thread is not being created by mistake
-@@ -732,7 +738,18 @@ bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
+@@ -508,12 +514,17 @@ Process LaunchProcess(const std::vector<std::string>& argv,
+       }
+     }
+ 
++#if BUILDFLAG(IS_HURD)
++    // GNU/Hurd has no parent-death signal; kill_on_parent_death is best
++    // effort there and the child keeps running if the parent dies.
++#else
+     if (options.kill_on_parent_death) {
+       if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0) {
+         RAW_LOG(ERROR, "prctl(PR_SET_PDEATHSIG) failed");
+         _exit(127);
+       }
+     }
++#endif  // BUILDFLAG(IS_HURD)
+ #endif
+ 
+     if (current_directory != nullptr) {
+@@ -732,7 +743,18 @@ bool GetAppOutputWithExitCode(const std::vector<std::string>& argv,
    return GetAppOutputInternal(argv, nullptr, false, output, true, exit_code);
  }
  
