@@ -12,9 +12,10 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | First linked executable (`check_example`): ELF for GNU/Hurd, `ld-x86-64.so.1`, `libc.so.0.3` | ✅ |
 | `check_example` runs on Debian GNU/Hurd (QEMU): logging, `CHECK`, stack-trace handler work | ✅ |
 | `chrome` compiles and links (ELF for GNU/Hurd) | ✅ |
-| `chrome` starts on Debian GNU/Hurd | ⏳ |
+| `chrome --version` runs on Debian GNU/Hurd | ✅ |
+| `chrome --headless --dump-dom` renders a page (browser, renderer, network and GPU processes, Mojo, Blink) | ✅ |
+| Clean shutdown (PartitionAlloc thread cache crash during thread teardown) | ⏳ |
 | `base_unittests` pass on the Hurd | ☐ |
-| `content_shell` renders a page | ☐ |
 | `chrome --no-sandbox` starts with X11 | ☐ |
 | Debian packaging | ☐ |
 
@@ -33,6 +34,15 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | Mojo shared-memory channel upgrade | needs memfd and futex |
 | GBM / native pixmaps on X11 | no DRM render nodes |
 | cpuinfo CPU detection (XNNPACK) | Linux backend reads sysfs; Hurd backend TODO |
+
+## Known runtime issues
+
+* Crash at exit in PartitionAlloc's thread cache lookup (`ThreadCache::IsValid`)
+  while libc tears down a thread; under investigation.
+* The GPU process cannot initialize SwiftShader/Vulkan (no ICD found) and
+  exits; Chrome falls back to software compositing.
+* `CountResidentBytes` (`mincore`) is not implemented on the Hurd; memory
+  dumps lack resident sizes.
 
 ## Known runtime risks
 

@@ -94,7 +94,22 @@ mode of `MessagePumpEpoll`, the `/dev/shm` file fallback for shared memory,
   `_IOWR('x', n, struct foo)` does not compile. For ioctls that only exist
   for Linux drivers (DRM, DMA-BUF, sync files) the patches spell out the
   Linux request numbers instead.
-* `pthread_t` is an integer handle, not a pointer.
+* `pthread_t` is an integer handle, not a pointer. The initial thread's
+  handle is 1; `base::PlatformThread::CurrentId()` maps it to the process id
+  because Chromium checks `CurrentId() == getpid()` for the main thread.
+* `/proc/<pid>/exe` records the path used for `exec()`. A process started via
+  `/proc/self/exe` therefore sees that literal path; child processes are
+  launched with the real executable path instead.
+* procfs has no `task/<tid>` entries and `maps` shows memory objects instead
+  of file names.
+* `getrlimit()` and similar calls write their results from user space, so
+  "pass a read-only buffer and expect `EFAULT`" probes crash. Query Mach
+  (`vm_region()`) instead.
+* `madvise(MADV_DONTNEED)` is not implemented: discarded pages keep their
+  contents (PartitionAlloc's `DecommittedMemoryIsAlwaysZeroed()` is false).
+* `CLOCK_MONOTONIC` can step backwards slightly; `TimeTicks` is clamped.
+* General protection faults (e.g. non-canonical pointers) arrive as
+  `SIGILL`, not `SIGSEGV`.
 * Error numbers start at `0x40000000`.
 * `syscall()`, `sched_getaffinity()`, `pthread_setschedparam()` and others are
   stubs that fail with `ENOSYS` (see `<gnu/stubs.h>` in the sysroot).
