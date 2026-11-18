@@ -190,6 +190,49 @@ index 0093fad69b..24723a9ce4 100644
  #else
  constexpr inline size_t kThreadCacheStorageSize =
      960 + (PA_CONFIG(THREAD_CACHE_ALLOC_STATS) ? 960 : 0);
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
+index 8259520502..9f820457c6 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_tls_posix.cc
+@@ -23,6 +23,16 @@ std::atomic<PartitionTlsKey> g_tls_key{kInvalidTlsKey};
+ 
+ namespace {
+ Lock g_tls_key_lock;
++
++#if PA_BUILDFLAG(IS_HURD)
++// GNU/Hurd's libpthread clears every value before calling its destructor,
++// round after round, so the tombstone set by TlsDestructor() is erased again.
++// Allocations made later during thread exit (including libpthread freeing its
++// own thread-specific array) would then create a new PartitionTls, writing
++// into that array while it is being freed. Remember the teardown in static
++// TLS, which stays valid until the thread is gone.
++thread_local bool g_tls_torn_down = false;
++#endif
+ }  // namespace
+ 
+ void EnsureThreadSpecificDataInitialized() {
+@@ -41,6 +51,11 @@ void EnsureThreadSpecificDataInitialized() {
+ }
+ 
+ PartitionTls* GetTlsSlowPath() {
++#if PA_BUILDFLAG(IS_HURD)
++  if (g_tls_torn_down) {
++    return nullptr;
++  }
++#endif
+   EnsureThreadSpecificDataInitialized();
+   PartitionTlsKey key = GetTlsKey();
+   if (key == kInvalidTlsKey) {
+@@ -65,6 +80,9 @@ void TlsDestructor(void* value) {
+   }
+   auto* tls = static_cast<PartitionTls*>(value);
+ 
++#if PA_BUILDFLAG(IS_HURD)
++  g_tls_torn_down = true;
++#endif
+   PartitionTlsKey key = GetTlsKey();
+   if (key != kInvalidTlsKey) {
+     PartitionTlsSet(key, reinterpret_cast<void*>(kTombstone));
 diff --git a/base/debug/stack_trace_posix.cc b/base/debug/stack_trace_posix.cc
 index d4b6111077..fb001e9b09 100644
 --- a/base/debug/stack_trace_posix.cc
