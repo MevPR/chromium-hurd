@@ -18,4 +18,20 @@ actual=$( (sha256sum "$TARBALL" 2>/dev/null || shasum -a 256 "$TARBALL") | cut -
 
 cd "$WORK"
 [ -d "chromium-$VERSION" ] || tar xf "dl/$TARBALL"
-echo "$WORK/chromium-$VERSION"
+
+# The lite tarball lacks the test fonts that test targets such as
+# base_unittests depend on; fetch them from the bucket named in DEPS.
+SRC=$WORK/chromium-$VERSION
+FONTS=$SRC/third_party/test_fonts/test_fonts
+if [ ! -e "$FONTS/Ahem.ttf" ]; then
+  entry=$(grep -A10 "'src/third_party/test_fonts/test_fonts'" "$SRC/DEPS")
+  object=$(echo "$entry" | sed -n "s/.*'object_name': '\([0-9a-f]*\)'.*/\1/p")
+  sha=$(echo "$entry" | sed -n "s/.*'sha256sum': '\([0-9a-f]*\)'.*/\1/p")
+  curl -fsSL -o dl/test_fonts.tar.gz \
+    "https://storage.googleapis.com/chromium-fonts/$object"
+  actual=$( (sha256sum dl/test_fonts.tar.gz 2>/dev/null ||
+             shasum -a 256 dl/test_fonts.tar.gz) | cut -d' ' -f1)
+  [ "$sha" = "$actual" ] || { echo "sha256 mismatch for test fonts" >&2; exit 1; }
+  mkdir -p "$FONTS" && tar xzf dl/test_fonts.tar.gz -C "$FONTS"
+fi
+echo "$SRC"

@@ -83,5 +83,21 @@ pages such as https://duckduckgo.com load and render:
 
 ![duckduckgo.com in Chromium on GNU/Hurd](images/duckduckgo-x11.png)
 
+WebGL with `--use-angle=swiftshader --enable-unsafe-swiftshader`:
+
+![WebGL in Chromium on GNU/Hurd](images/webgl-x11.png)
+
+## Debian package
+
+`scripts/make-deb.py` packs the build as `chromium_<version>-0hurd1_hurd-amd64.deb`
+(installed into `/usr/lib/chromium`, started via `/usr/bin/chromium`). Its
+Depends are derived from the DT_NEEDED entries of the shipped ELF files and
+the sysroot packages providing them, so the package targets a system that
+matches the sysroot (unstable). Run it in the build container:
+
+```sh
+scripts/make-deb.py "$SRC" "$WORK/sysroot-hurd-amd64" "$WORK/deb"
+```
+
 On Apple Silicon, use an AHCI disk (`-device ahci`); the Hurd's rumpdisk
 reports I/O errors on QEMU's emulated PIIX IDE controller under TCG.

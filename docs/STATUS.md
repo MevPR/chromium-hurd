@@ -19,7 +19,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | `base_unittests` pass on the Hurd | ☐ |
 | `chrome --no-sandbox` starts with X11 (Xvfb), full browser UI | ✅ |
 | https://duckduckgo.com renders correctly over the network | ✅ |
-| Debian packaging | ☐ |
+| WebGL in an X11 window via SwANGLE (SwiftShader Vulkan) | ✅ |
+| Debian binary package (`scripts/make-deb.py`) | ⏳ built, install test pending |
 
 ## Disabled features
 
@@ -41,9 +42,6 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 
 * Dawn (WebGPU) finds no Vulkan driver of its own and logs warnings; WebGPU
   is unavailable.
-* With `--use-angle=swiftshader --enable-unsafe-swiftshader` under X11, WebGL
-  contexts are created (SwiftShader Vulkan), but the canvas is displayed
-  blank; under investigation.
 * `CountResidentBytes` (`mincore`) is not implemented on the Hurd; memory
   dumps lack resident sizes.
 
