@@ -10,6 +10,39 @@ Chromium release tarballs — the same model the FreeBSD and OpenBSD ports use.
 
 ![duckduckgo.com in Chromium on GNU/Hurd](docs/images/duckduckgo-x11.png)
 
+## Get started
+
+You need a Debian GNU/Hurd amd64 system that tracks unstable, with X11 (e.g.
+the [official image](https://cdimage.debian.org/cdimage/ports/latest/hurd-amd64/)
+in QEMU, upgraded with `apt-get update && apt-get dist-upgrade`).
+
+1. Download the prebuilt package from the
+   [latest release](https://github.com/MevPR/chromium-hurd/releases/latest):
+
+   ```sh
+   wget https://github.com/MevPR/chromium-hurd/releases/download/v157.0.8103.78-0hurd1/chromium_157.0.8103.78-0hurd1_hurd-amd64.deb
+   ```
+
+2. Install it; apt pulls in the required libraries:
+
+   ```sh
+   apt-get install ./chromium_157.0.8103.78-0hurd1_hurd-amd64.deb
+   ```
+
+3. Start it from an X11 session:
+
+   ```sh
+   chromium https://duckduckgo.com
+   ```
+
+   `chromium` runs the browser with `--no-sandbox --no-zygote`, because the
+   Linux sandbox does not exist on the Hurd (see
+   [docs/PORTING.md](docs/PORTING.md#sandbox)). Headless mode works too:
+   `chromium --headless --dump-dom https://example.com`. On slow (emulated)
+   machines add `--ipc-connection-timeout=120 --disable-gpu-watchdog`.
+
+To build the package yourself, see [Building from source](#building-from-source).
+
 ## Layout
 
 | Path | Purpose |
@@ -35,10 +68,14 @@ Chromium release tarballs — the same model the FreeBSD and OpenBSD ports use.
 * Chromium is cross-compiled on Linux x86_64 against a sysroot assembled
   from Debian's `hurd-amd64` packages (debian-ports).
 
-## Building
+## Building from source
+
+You need Docker on an x86_64 Linux or macOS host (Apple Silicon works via
+Rosetta) and about 40 GB of free space. The build takes many hours:
 
 ```sh
-WORK=/path/to/workdir                       # ~40 GB free space needed
+git clone https://github.com/MevPR/chromium-hurd && cd chromium-hurd
+WORK=/path/to/workdir
 docker build -t chromium-hurd-build docker/
 docker run --rm -it --platform linux/amd64 \
   -v "$PWD":/port -v "$WORK":/work chromium-hurd-build sh -c '
@@ -46,20 +83,13 @@ docker run --rm -it --platform linux/amd64 \
     /port/scripts/make-sysroot.py /work/sysroot-hurd-amd64 &&
     /port/scripts/apply-patches.sh "$SRC" &&
     /port/scripts/setup-toolchain.sh "$SRC" &&
-    /port/scripts/build.sh "$SRC" /work/sysroot-hurd-amd64 chrome'
+    /port/scripts/build.sh "$SRC" /work/sysroot-hurd-amd64 chrome &&
+    /port/scripts/make-deb.py "$SRC" /work/sysroot-hurd-amd64 /work/deb'
 ```
 
-Copy `out/hurd/` to a Hurd system (e.g. the official
-[Debian GNU/Hurd amd64 image](https://cdimage.debian.org/cdimage/ports/latest/hurd-amd64/)
-in QEMU) and run:
-
-```sh
-./chrome --no-sandbox --no-zygote
-```
-
-`--no-sandbox` is required (see [docs/PORTING.md](docs/PORTING.md#sandbox));
-`--no-zygote` avoids the zygote's reliance on Linux-specific process and
-socket features while the port is being brought up.
+The package ends up in `$WORK/deb/`. See [docs/DEVELOPING.md](docs/DEVELOPING.md)
+for the incremental build loop, the self-contained test bundle
+(`scripts/make-test-bundle.sh`) and testing in QEMU.
 
 ## License
 

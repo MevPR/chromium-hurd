@@ -20,7 +20,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | `chrome --no-sandbox` starts with X11 (Xvfb), full browser UI | ✅ |
 | https://duckduckgo.com renders correctly over the network | ✅ |
 | WebGL in an X11 window via SwANGLE (SwiftShader Vulkan) | ✅ |
-| Debian binary package (`scripts/make-deb.py`) | ⏳ built, install test pending |
+| Debian binary package (`scripts/make-deb.py`), installs with apt on unstable | ✅ |
+| Prebuilt package published as a [GitHub release](https://github.com/MevPR/chromium-hurd/releases/latest) | ✅ |
 
 ## Disabled features
 

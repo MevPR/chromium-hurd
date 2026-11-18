@@ -93,7 +93,8 @@ WebGL with `--use-angle=swiftshader --enable-unsafe-swiftshader`:
 (installed into `/usr/lib/chromium`, started via `/usr/bin/chromium`). Its
 Depends are derived from the DT_NEEDED entries of the shipped ELF files and
 the sysroot packages providing them, so the package targets a system that
-matches the sysroot (unstable). Run it in the build container:
+matches the sysroot (unstable). It was tested with `apt-get install` on the
+Debian GNU/Hurd 13 image upgraded to unstable. Run it in the build container:
 
 ```sh
 scripts/make-deb.py "$SRC" "$WORK/sysroot-hurd-amd64" "$WORK/deb"
