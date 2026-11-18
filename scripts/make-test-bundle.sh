@@ -31,9 +31,11 @@ for f in "$BUILD"/*.pak "$BUILD"/icudtl.dat "$BUILD"/*.bin \
 done
 cp "$BUILD/locales/en-US.pak" "$STAGE/locales/"
 
-# Runtime libraries (shared objects only, symlinks preserved).
-# (The dynamic linker, ld-x86-64.so.1, matches the pattern too.)
-cp -a "$SYSROOT"/usr/lib/x86_64-gnu/*.so.* "$STAGE/lib/"
+# Runtime libraries, symlinks preserved. Unversioned *.so files are included
+# because some libraries (NSPR, NSS) are only installed under that name; the
+# dynamic linker, ld-x86-64.so.1, matches the second pattern.
+cp -a "$SYSROOT"/usr/lib/x86_64-gnu/*.so "$SYSROOT"/usr/lib/x86_64-gnu/*.so.* \
+  "$STAGE/lib/"
 
 cat > "$STAGE/run-chrome" <<'EOF'
 #!/bin/sh

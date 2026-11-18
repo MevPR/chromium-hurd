@@ -76,6 +76,26 @@ index 7824c66ab7..77a776f9af 100644
  #include <sys/prctl.h>
  
  #if (PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)) && \
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h b/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
+index 2c35ada4f8..0991e376d1 100644
+--- a/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
+@@ -332,7 +332,15 @@ void DiscardSystemPagesInternal(uintptr_t address, size_t length) {
+   // performance benefits unclear.
+   //
+   // Therefore, we just do the simple thing: MADV_DONTNEED.
++#if PA_BUILDFLAG(IS_HURD)
++  // GNU/Hurd's madvise() does not implement MADV_DONTNEED. Discarding is only
++  // a hint (the pages stay accessible with undefined contents), so a failure
++  // just means the memory is not returned early. Do not log: that allocates,
++  // and this runs with the partition lock held.
++  madvise(ptr, length, MADV_DONTNEED);
++#else
+   PA_PCHECK(0 == madvise(ptr, length, MADV_DONTNEED));
++#endif  // PA_BUILDFLAG(IS_HURD)
+ #endif  // PA_BUILDFLAG(IS_APPLE)
+ }
+ 
 diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
 index a3874e5b41..35b0413456 100644
 --- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
@@ -723,7 +743,7 @@ index 2618b503db..b001ff439b 100644
  
  struct CGroups {
 diff --git a/base/profiler/stack_copier_signal.cc b/base/profiler/stack_copier_signal.cc
-index 62ab1c02f7..7bde4f7271 100644
+index 62ab1c02f7..facad1a070 100644
 --- a/base/profiler/stack_copier_signal.cc
 +++ b/base/profiler/stack_copier_signal.cc
 @@ -5,11 +5,19 @@
@@ -747,7 +767,15 @@ index 62ab1c02f7..7bde4f7271 100644
  
  #include <atomic>
  #include <cstring>
-@@ -32,6 +40,31 @@ namespace base {
+@@ -24,6 +32,7 @@
+ #include "base/profiler/register_context_registers.h"
+ #include "base/profiler/stack_buffer.h"
+ #include "base/profiler/suspendable_thread_delegate.h"
++#include "base/threading/platform_thread_internal_posix.h"
+ #include "base/time/time_override.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+@@ -32,6 +41,31 @@ namespace base {
  
  namespace {
  
@@ -779,7 +807,7 @@ index 62ab1c02f7..7bde4f7271 100644
  // Waitable event implementation with futex and without DCHECK(s), since signal
  // handlers cannot allocate memory or use pthread api.
  class AsyncSafeWaitableEvent {
-@@ -94,6 +127,7 @@ class AsyncSafeWaitableEvent {
+@@ -94,6 +128,7 @@ class AsyncSafeWaitableEvent {
  
    std::atomic_uint32_t futex_{kNotSignaled};
  };
@@ -787,15 +815,14 @@ index 62ab1c02f7..7bde4f7271 100644
  
  // Scoped signal event that calls Signal on the AsyncSafeWaitableEvent at
  // destructor.
-@@ -262,10 +296,19 @@ bool StackCopierSignal::CopyStack(StackBuffer* stack_buffer,
+@@ -262,10 +297,18 @@ bool StackCopierSignal::CopyStack(StackBuffer* stack_buffer,
        return false;
      }
  
 +#if BUILDFLAG(IS_HURD)
-+    // On GNU/Hurd, PlatformThreadId is the thread's pthread_t.
-+    if (pthread_kill(
-+            static_cast<pthread_t>(thread_delegate_->GetThreadId().raw()),
-+            SIGURG) != 0) {
++    if (pthread_kill(internal::HurdPthreadFromThreadId(
++                         thread_delegate_->GetThreadId()),
++                     SIGURG) != 0) {
 +      NOTREACHED();
 +    }
 +#else
@@ -882,6 +909,38 @@ index 5460a7f35e..3d3bd67a91 100644
  }
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
  
+diff --git a/base/threading/platform_thread_internal_posix.h b/base/threading/platform_thread_internal_posix.h
+index 008e513956..d15b73f369 100644
+--- a/base/threading/platform_thread_internal_posix.h
++++ b/base/threading/platform_thread_internal_posix.h
+@@ -11,6 +11,10 @@
+ #include "base/threading/platform_thread.h"
+ #include "build/build_config.h"
+ 
++#if BUILDFLAG(IS_HURD)
++#include <pthread.h>
++#endif
++
+ namespace base {
+ 
+ namespace internal {
+@@ -69,6 +73,16 @@ inline constexpr auto SetThreadType = SetThreadTypeChromeOS;
+ inline constexpr auto SetThreadType = SetThreadTypeLinux;
+ #endif
+ 
++#if BUILDFLAG(IS_HURD)
++// GNU/Hurd has no kernel thread ids. PlatformThread ids are derived from
++// libpthread's thread handles, which are small integers starting at 1 for the
++// initial thread. Like on Linux, the initial thread's id equals the process
++// id (code relies on this); other threads keep their handle, moved out of the
++// way if it happens to equal the process id.
++BASE_EXPORT PlatformThreadId HurdThreadIdFromPthread(pthread_t thread);
++BASE_EXPORT pthread_t HurdPthreadFromThreadId(PlatformThreadId id);
++#endif  // BUILDFLAG(IS_HURD)
++
+ }  // namespace internal
+ 
+ }  // namespace base
 diff --git a/base/threading/platform_thread_linux.cc b/base/threading/platform_thread_linux.cc
 index b0dab76f9e..5a96e37c28 100644
 --- a/base/threading/platform_thread_linux.cc
@@ -901,17 +960,52 @@ index b0dab76f9e..5a96e37c28 100644
  
  void SetCurrentThreadTypeImpl(ThreadType thread_type,
 diff --git a/base/threading/platform_thread_posix.cc b/base/threading/platform_thread_posix.cc
-index 2c34251a84..a05344c9da 100644
+index 2c34251a84..4cbb03d873 100644
 --- a/base/threading/platform_thread_posix.cc
 +++ b/base/threading/platform_thread_posix.cc
-@@ -223,6 +223,10 @@ PlatformThreadId PlatformThreadBase::CurrentId() {
+@@ -211,6 +211,35 @@ void InvalidateTidCache() {
+   g_main_thread_tid_cache_valid.store(false, std::memory_order_relaxed);
+ }
+ 
++#if BUILDFLAG(IS_HURD)
++namespace {
++// libpthread (htl) gives the initial thread handle 1.
++constexpr pthread_t kHurdInitialThread = 1;
++// Set on ids of other threads whose handle equals the process id.
++constexpr pid_t kHurdRemappedThreadBit = 0x40000000;
++}  // namespace
++
++PlatformThreadId HurdThreadIdFromPthread(pthread_t thread) {
++  const pid_t pid = getpid();
++  if (thread == kHurdInitialThread) {
++    return PlatformThreadId(pid);
++  }
++  pid_t id = static_cast<pid_t>(thread);
++  if (id == pid) {
++    id |= kHurdRemappedThreadBit;
++  }
++  return PlatformThreadId(id);
++}
++
++pthread_t HurdPthreadFromThreadId(PlatformThreadId id) {
++  const pid_t raw = static_cast<pid_t>(id.raw());
++  if (raw == getpid()) {
++    return kHurdInitialThread;
++  }
++  return static_cast<pthread_t>(raw & ~kHurdRemappedThreadBit);
++}
++#endif  // BUILDFLAG(IS_HURD)
++
+ }  // namespace internal
+ 
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+@@ -223,6 +252,9 @@ PlatformThreadId PlatformThreadBase::CurrentId() {
    uint64_t tid;
    CHECK_EQ(pthread_threadid_np(nullptr, &tid), 0);
    return PlatformThreadId(tid);
 +#elif BUILDFLAG(IS_HURD)
-+  // GNU/Hurd has no kernel thread ids (and no gettid()). libpthread's thread
-+  // handles are small integers that are unique within the process.
-+  return PlatformThreadId(static_cast<pid_t>(pthread_self()));
++  // GNU/Hurd has no kernel thread ids (and no gettid()).
++  return internal::HurdThreadIdFromPthread(pthread_self());
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
    // Workaround false-positive MSAN use-of-uninitialized-value on
    // thread_local storage for loaded libraries:
