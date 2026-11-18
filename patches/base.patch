@@ -383,6 +383,21 @@ index 486f8f93b2..a56fa80b60 100644
    drive_info.has_seek_penalty = false;
    return drive_info;
  #elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/files/drive_info_unittest.cc b/base/files/drive_info_unittest.cc
+index ede1f5357b..75fd2ab679 100644
+--- a/base/files/drive_info_unittest.cc
++++ b/base/files/drive_info_unittest.cc
+@@ -21,7 +21,9 @@ void TestForReasonableDriveInfo(const std::optional<DriveInfo>& info) {
+   // `has_seek_penalty` may or may not be true but should be ascertainable.
+   EXPECT_NE(info->has_seek_penalty, std::nullopt);
+ 
+-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++// GNU/Hurd has no /sys/dev/block, so only `has_seek_penalty` is known there.
++#if BUILDFLAG(IS_WIN) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || \
++    BUILDFLAG(IS_CHROMEOS)
+   // `is_removable` may or may not be true but should be ascertainable.
+   EXPECT_NE(info->is_removable, std::nullopt);
+ 
 diff --git a/base/files/file_path_watcher_stub.cc b/base/files/file_path_watcher_stub.cc
 index a29f53cdc3..73e179c548 100644
 --- a/base/files/file_path_watcher_stub.cc
@@ -442,10 +457,36 @@ index c0097f4b6e..c89151c858 100644
  
    mode_t mode = S_IRUSR | S_IWUSR;
  #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/base/files/file_unittest.cc b/base/files/file_unittest.cc
+index fd9512b52a..9795e9c4a7 100644
+--- a/base/files/file_unittest.cc
++++ b/base/files/file_unittest.cc
+@@ -555,7 +555,9 @@ TEST(FileTest, Length) {
+     EXPECT_EQ(data_to_write[i], data_read[i]);
+   }
+ 
+-#if !BUILDFLAG(IS_FUCHSIA)  // Fuchsia doesn't seem to support big files.
++// Fuchsia doesn't seem to support big files. On GNU/Hurd, ext2fs extends a
++// file to 5 GB so slowly that the test times out.
++#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_HURD)
+   // Expand the file past the 4 GB limit.
+   const int64_t kBigFileLength = 5'000'000'000;
+   EXPECT_TRUE(file.SetLength(kBigFileLength));
 diff --git a/base/files/file_util_posix.cc b/base/files/file_util_posix.cc
-index 538fdbc604..caedbe7fb4 100644
+index 538fdbc604..1d60d007d7 100644
 --- a/base/files/file_util_posix.cc
 +++ b/base/files/file_util_posix.cc
+@@ -646,8 +646,8 @@ std::string AppendModeCharacter(std::string_view mode, char mode_char) {
+ }
+ #endif
+ 
+-#if !BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_APPLE) && \
+-    !(BUILDFLAG(IS_ANDROID) && __ANDROID_API__ >= 21)
++#if (!BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_HURD)) && !BUILDFLAG(IS_CHROMEOS) && \
++    !BUILDFLAG(IS_APPLE) && !(BUILDFLAG(IS_ANDROID) && __ANDROID_API__ >= 21)
+ bool PreReadFileSlow(const FilePath& file_path, int64_t max_bytes) {
+   DCHECK_GE(max_bytes, 0);
+ 
 @@ -1512,7 +1512,7 @@ bool AllocateFileRegion(File* file, int64_t offset, size_t size) {
    // space. It can fail because the filesystem doesn't support it. In that case,
    // use the manual method below.
@@ -455,8 +496,20 @@ index 538fdbc604..caedbe7fb4 100644
    if (HANDLE_EINTR(fallocate(file->GetPlatformFile(), 0, offset,
                               static_cast<off_t>(size))) != -1) {
      return true;
+@@ -1731,8 +1731,9 @@ bool PreReadFile(const FilePath& file_path,
+ 
+   // posix_fadvise() is only available in the Android NDK in API 21+. Older
+   // versions may have the required kernel support, but don't have enough usage
+-  // to justify backporting.
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
++  // to justify backporting. GNU/Hurd only has a posix_fadvise() stub that
++  // fails with ENOSYS, so it reads the file instead.
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS) || \
+     (BUILDFLAG(IS_ANDROID) && __ANDROID_API__ >= 21)
+   File file(file_path, File::FLAG_OPEN | File::FLAG_READ);
+   if (!file.IsValid()) {
 diff --git a/base/files/file_util_unittest.cc b/base/files/file_util_unittest.cc
-index ba1f66c7a3..5fe1f9c497 100644
+index ba1f66c7a3..c8f46b00a4 100644
 --- a/base/files/file_util_unittest.cc
 +++ b/base/files/file_util_unittest.cc
 @@ -89,7 +89,7 @@
@@ -486,6 +539,44 @@ index ba1f66c7a3..5fe1f9c497 100644
    // Make sure that the test can clean up after itself.
    if (file_attrs_supported) {
      flags &= ~FS_IMMUTABLE_FL;
+@@ -2404,7 +2404,9 @@ TEST_F(FileUtilTest, IsLink) {
+ }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++// Non-blocking reads from FIFOs behave differently on GNU/Hurd, so this
++// Linux-specific test is skipped there.
++#if (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ // This test will validate that files which would block when read result in a
+ // failure on a call to ReadFileToStringNonBlocking. To accomplish this we will
+ // use a named pipe because it appears as a file on disk and we can control how
+@@ -2437,7 +2439,7 @@ TEST_F(FileUtilTest, TestNonBlockingFileReadLinux) {
+   ASSERT_EQ(result.size(), 1u);
+   EXPECT_EQ(result[0], 'a');
+ }
+-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++#endif  // (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_HURD)) || BUILDFLAG(IS_CHROMEOS)
+ 
+ TEST_F(FileUtilTest, MoveFileNew) {
+   // Create a file
+@@ -5290,6 +5292,9 @@ TEST_F(FileUtilTest, CopyFileContentsWithSendfileEmpty) {
+   EXPECT_EQ(L"", ReadTextFile(file_name_to));
+ }
+ 
++// GNU/Hurd pipes and sockets report the bytes they hold as st_size, so
++// sendfile() copies from them successfully instead of failing as on Linux.
++#if !BUILDFLAG(IS_HURD)
+ TEST_F(FileUtilTest, CopyFileContentsWithSendfilePipe) {
+   FilePath file_name_to = temp_dir_.GetPath().Append(
+       FILE_PATH_LITERAL("copy_contents_file_out.txt"));
+@@ -5352,6 +5357,7 @@ TEST_F(FileUtilTest, CopyFileContentsWithSendfileSocket) {
+       internal::CopyFileContentsWithSendfile(from_sock, to, retry_slow));
+   ASSERT_TRUE(retry_slow);
+ }
++#endif  // !BUILDFLAG(IS_HURD)
+ 
+ TEST_F(FileUtilTest, CopyFileContentsWithSendfileSeqFile) {
+   // This test verifies the special case where we have a regular file with zero
 diff --git a/base/linux_util.cc b/base/linux_util.cc
 index a6b4fce5d4..72b0cb563a 100644
 --- a/base/linux_util.cc
@@ -943,7 +1034,7 @@ index 99427d5301..7fbf903c6f 100644
  
  // This function runs on the stack specified on the clone call. It uses longjmp
 diff --git a/base/process/process_linux.cc b/base/process/process_linux.cc
-index 2618b503db..2b3cedbd87 100644
+index 2618b503db..522b7345c4 100644
 --- a/base/process/process_linux.cc
 +++ b/base/process/process_linux.cc
 @@ -5,7 +5,11 @@
@@ -983,7 +1074,25 @@ index 2618b503db..2b3cedbd87 100644
  }
  
  struct CGroups {
-@@ -198,7 +208,13 @@ bool Process::SetPriority(Priority priority) {
+@@ -126,11 +136,17 @@ Time Process::CreationTime() const {
+   }
+ 
+   TimeDelta start_offset = internal::ClockTicksToTimeDelta(start_ticks);
++#if BUILDFLAG(IS_HURD)
++  // The Hurd's procfs reports the start time in clock ticks since the Unix
++  // epoch rather than since boot.
++  return Time::UnixEpoch() + start_offset;
++#else
+   Time boot_time = internal::GetBootTime();
+   if (boot_time.is_null()) {
+     return Time();
+   }
+   return Time(boot_time + start_offset);
++#endif  // BUILDFLAG(IS_HURD)
+ }
+ 
+ // static
+@@ -198,7 +214,13 @@ bool Process::SetPriority(Priority priority) {
                                                           : kForegroundPriority;
    int result =
        setpriority(PRIO_PROCESS, static_cast<id_t>(process_), priority_value);
