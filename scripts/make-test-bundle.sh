@@ -50,9 +50,12 @@ cat > "$STAGE/run-chrome" <<'EOF'
 # chrome uses the bundled dynamic linker and libraries (ELF interpreter and
 # RPATH); the port needs these flags for now. Under QEMU without KVM a child
 # process can take longer than the default 15 s to receive the browser's first
-# IPC reply and would then terminate itself, so the timeout is raised.
+# IPC reply and would then terminate itself, so the timeout is raised. For the
+# same reason the GPU watchdog would kill the GPU process while SwiftShader
+# renders.
 HERE=$(cd "$(dirname "$0")" && pwd)
-exec "$HERE/chrome" --no-sandbox --no-zygote --ipc-connection-timeout=120 "$@"
+exec "$HERE/chrome" --no-sandbox --no-zygote --ipc-connection-timeout=120 \
+  --disable-gpu-watchdog "$@"
 EOF
 chmod +x "$STAGE/run-chrome"
 

@@ -17,7 +17,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 | Clean shutdown (PartitionAlloc TLS during libc thread teardown) | ✅ |
 | GPU process with SwiftShader (SwANGLE), WebGL in headless mode | ✅ |
 | `base_unittests` pass on the Hurd | ☐ |
-| `chrome --no-sandbox` starts with X11 | ☐ |
+| `chrome --no-sandbox` starts with X11 (Xvfb), full browser UI | ✅ |
+| https://duckduckgo.com renders correctly over the network | ✅ |
 | Debian packaging | ☐ |
 
 ## Disabled features
@@ -40,6 +41,9 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
 
 * Dawn (WebGPU) finds no Vulkan driver of its own and logs warnings; WebGPU
   is unavailable.
+* With `--use-angle=swiftshader --enable-unsafe-swiftshader` under X11, WebGL
+  contexts are created (SwiftShader Vulkan), but the canvas is displayed
+  blank; under investigation.
 * `CountResidentBytes` (`mincore`) is not implemented on the Hurd; memory
   dumps lack resident sizes.
 
@@ -52,6 +56,8 @@ Chromium 157.0.8103.78 → Debian GNU/Hurd amd64. Last updated: 2026-11-18.
   `ucontext` contents.
 * Under QEMU without KVM, child processes can miss the 15 s IPC connection
   timeout and terminate themselves (seen as "Network service crashed").
-  `run-chrome` passes `--ipc-connection-timeout=120`.
+  `run-chrome` passes `--ipc-connection-timeout=120`. The GPU watchdog
+  likewise kills the GPU process while SwiftShader renders, so `run-chrome`
+  also passes `--disable-gpu-watchdog`.
 * Performance under QEMU emulation is too slow for real browsing; real
   hardware or KVM is needed.

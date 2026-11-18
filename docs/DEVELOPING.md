@@ -47,7 +47,41 @@ mkdir -p /opt/chromium && tar xzf bundle.tar.gz -C /opt/chromium
 
 The bundle carries the sysroot's glibc, dynamic linker and libraries, so it
 runs on systems with older installed libraries (the sysroot is built from
-unstable). `run-chrome` adds `--no-sandbox --no-zygote`.
+unstable). `run-chrome` adds `--no-sandbox --no-zygote` and raises the IPC
+connection timeout for emulated machines.
+
+Headless rendering:
+
+```sh
+/opt/chromium/run-chrome --headless --dump-dom --user-data-dir=/tmp/p \
+  'data:text/html,<h1>Hello</h1>'
+```
+
+### X11
+
+Xorg on the Hurd needs the console's keyboard and does not start from an SSH
+session. Use Xvfb instead. The debian-ports `xvfb` package may need a newer
+glibc than the image provides; unpack it and run it with the bundle's glibc:
+
+```sh
+dpkg -x xvfb_*_hurd-amd64.deb /opt/xvfb
+/opt/chromium/lib/ld-x86-64.so.1 \
+  --library-path /opt/chromium/lib:/lib/x86_64-gnu:/usr/lib/x86_64-gnu \
+  /opt/xvfb/usr/bin/Xvfb :1 -screen 0 1280x800x24 -nolisten tcp &
+DISPLAY=:1 /opt/chromium/run-chrome --ozone-platform=x11 \
+  --user-data-dir=/tmp/p file:///tmp/page.html &
+DISPLAY=:1 xwd -root -silent > shot.xwd   # screenshot
+```
+
+Xvfb has no OpenGL, so the GPU process falls back to software compositing
+(the "Exiting GPU process due to errors during initialization" messages are
+expected). `--use-angle=swiftshader --enable-unsafe-swiftshader` uses SwANGLE
+instead, which is also needed for WebGL.
+
+The QEMU user-mode network works once the host firewall allows `qemu`;
+pages such as https://duckduckgo.com load and render:
+
+![duckduckgo.com in Chromium on GNU/Hurd](images/duckduckgo-x11.png)
 
 On Apple Silicon, use an AHCI disk (`-device ahci`); the Hurd's rumpdisk
 reports I/O errors on QEMU's emulated PIIX IDE controller under TCG.

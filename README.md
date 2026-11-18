@@ -4,8 +4,11 @@ A port of the Chromium browser to [Debian GNU/Hurd](https://www.debian.org/ports
 on x86_64 (`hurd-amd64`), maintained as a patch set against the official
 Chromium release tarballs — the same model the FreeBSD and OpenBSD ports use.
 
-> **Status: work in progress.** See [docs/STATUS.md](docs/STATUS.md) for what
-> builds and what does not yet.
+> **Status: work in progress.** Chromium builds, runs headless and with a
+> full browser UI under X11, and renders real web pages. See
+> [docs/STATUS.md](docs/STATUS.md) for details and known issues.
+
+![duckduckgo.com in Chromium on GNU/Hurd](docs/images/duckduckgo-x11.png)
 
 ## Layout
 
